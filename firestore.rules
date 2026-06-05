@@ -1,0 +1,189 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: portfolios
+    // Document ID: portfolioId (auto-generated or custom)
+    // Fields:
+    //   - name: string (required, 1-100 chars)
+    //   - ownerId: string (required, creator's UID)
+    //   - ownerEmail: string (required, creator's email)
+    //   - sharedWith: list of maps (required, [{email: string, permission: 'read' | 'write'}])
+    //   - sharedWithEmails: list of strings (required, email addresses with access)
+    //   - sharedWithEditors: list of strings (required, email addresses with write access)
+    //   - createdAt: timestamp (required)
+    //   - updatedAt: timestamp (required)
+    //
+    // Collection: portfolios/{portfolioId}/investments
+    // Document ID: investmentId (auto-generated)
+    // Fields:
+    //   - id: string (required)
+    //   - portfolioId: string (required)
+    //   - name: string (required, 1-100 chars)
+    //   - type: string (required, 'stock'|'mutual_fund'|'fd'|'savings'|'other')
+    //   - region: string (required, 'India'|'Europe'|'Other')
+    //   - currency: string (required, 'INR'|'EUR'|'USD')
+    //   - amountInvested: number (required, >= 0)
+    //   - currentValue: number (required, >= 0)
+    //   - units: number (optional, >= 0)
+    //   - purchasePrice: number (optional, >= 0)
+    //   - interestRate: number (optional, >= 0)
+    //   - interestType: string (optional, 'simple'|'compound')
+    //   - compoundingFrequency: string (optional, 'monthly'|'quarterly'|'half-yearly'|'yearly')
+    //   - startDate: string (optional, YYYY-MM-DD format)
+    //   - maturityDate: string (optional, YYYY-MM-DD format)
+    //   - institution: string (required, 1-100 chars)
+    //   - notes: string (optional, <= 1000 chars)
+    //   - createdAt: timestamp (required)
+    //   - updatedAt: timestamp (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isValidEmail(email) {
+      return email is string &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // Check if the user is the owner of the portfolio
+    function isPortfolioOwner(portfolioData) {
+      return isAuthenticated() && portfolioData.ownerId == request.auth.uid;
+    }
+
+    // Check if the user has read access (owner or in shared list)
+    function canReadPortfolio(portfolioData) {
+      return isAuthenticated() && (
+        portfolioData.ownerId == request.auth.uid ||
+        request.auth.token.email in portfolioData.sharedWithEmails
+      );
+    }
+
+    // Check if the user has write access (owner or in editors list)
+    function canWritePortfolio(portfolioData) {
+      return isAuthenticated() && (
+        portfolioData.ownerId == request.auth.uid ||
+        request.auth.token.email in portfolioData.sharedWithEditors
+      );
+    }
+
+    // Validate email constraints inside the list
+    function isValidSharedWithList(sharedList) {
+      return sharedList is list && sharedList.size() <= 20;
+    }
+    // Validate portfolio schema
+    function isValidPortfolio(data) {
+      return data.keys().hasOnly(['id', 'name', 'ownerId', 'ownerEmail', 'sharedWith', 'sharedWithEmails', 'sharedWithEditors', 'createdAt', 'updatedAt']) &&
+             data.id is string &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.ownerId is string && data.ownerId.size() > 0 &&
+             data.ownerEmail is string && isValidEmail(data.ownerEmail) &&
+             isValidSharedWithList(data.sharedWith) &&
+             data.sharedWithEmails is list && data.sharedWithEmails.size() <= 20 &&
+             data.sharedWithEditors is list && data.sharedWithEditors.size() <= 20 &&
+             data.createdAt is timestamp &&
+             data.updatedAt is timestamp;
+    }
+
+    // Validate investment schema
+    function isValidInvestment(data) {
+      return data.keys().hasOnly([
+        'id', 'portfolioId', 'name', 'type', 'region', 'currency', 
+        'amountInvested', 'currentValue', 'units', 'purchasePrice',
+        'interestRate', 'interestType', 'compoundingFrequency',
+        'startDate', 'maturityDate', 'institution', 'notes', 
+        'ticker', 'schemeCode', 'createdAt', 'updatedAt'
+      ]) &&
+      data.id is string &&
+      data.portfolioId is string &&
+      data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+      data.type in ['stock', 'mutual_fund', 'fd', 'savings', 'other'] &&
+      data.region in ['India', 'Europe', 'Other'] &&
+      data.currency in ['INR', 'EUR', 'USD'] &&
+      data.amountInvested is number && data.amountInvested >= 0 &&
+      data.currentValue is number && data.currentValue >= 0 &&
+      (!('units' in data) || (data.units is number && data.units >= 0)) &&
+      (!('purchasePrice' in data) || (data.purchasePrice is number && data.purchasePrice >= 0)) &&
+      (!('interestRate' in data) || (data.interestRate is number && data.interestRate >= 0)) &&
+      (!('interestType' in data) || (data.interestType in ['simple', 'compound'])) &&
+      (!('compoundingFrequency' in data) || (data.compoundingFrequency in ['monthly', 'quarterly', 'half-yearly', 'yearly'])) &&
+      (!('startDate' in data) || (data.startDate is string && data.startDate.matches("^\\\\d{4}-\\\\d{2}-\\\\d{2}$"))) &&
+      (!('maturityDate' in data) || (data.maturityDate is string && data.maturityDate.matches("^\\\\d{4}-\\\\d{2}-\\\\d{2}$"))) &&
+      data.institution is string && data.institution.size() > 0 && data.institution.size() <= 100 &&
+      (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000)) &&
+      (!('ticker' in data) || (data.ticker is string && data.ticker.size() <= 100)) &&
+      (!('schemeCode' in data) || (data.schemeCode is number && data.schemeCode >= 0)) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    // Helper to load parent portfolio document
+    function getPortfolio(portfolioId) {
+      return get(/databases/$(database)/documents/portfolios/$(portfolioId)).data;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /secrets/gemini {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.token.email == "admin@example.com";
+    }
+
+    match /portfolios/{portfolioId} {
+      // Owner or shared users can read
+      allow read: if canReadPortfolio(resource.data);
+
+      // Create: user must set themselves as owner, and data must be valid
+      allow create: if isAuthenticated() && 
+                    request.resource.data.ownerId == request.auth.uid &&
+                    isValidPortfolio(request.resource.data);
+
+      // Update: owner or shared editors can update. But non-owners cannot change owner fields.
+      allow update: if isAuthenticated() &&
+                    canWritePortfolio(resource.data) &&
+                    isValidPortfolio(request.resource.data) &&
+                    request.resource.data.ownerId == resource.data.ownerId &&
+                    request.resource.data.ownerEmail == resource.data.ownerEmail &&
+                    // Non-owners cannot change sharing settings, only owner can
+                    (isPortfolioOwner(resource.data) || (
+                      request.resource.data.sharedWith == resource.data.sharedWith &&
+                      request.resource.data.sharedWithEmails == resource.data.sharedWithEmails &&
+                      request.resource.data.sharedWithEditors == resource.data.sharedWithEditors
+                    ));
+
+      // Delete: Only owner can delete portfolio
+      allow delete: if isAuthenticated() && isPortfolioOwner(resource.data);
+
+      // Subcollection investments
+      match /investments/{investmentId} {
+        // Read: anyone with read access to the portfolio can read
+        allow read: if canReadPortfolio(getPortfolio(portfolioId));
+
+        // Create: anyone with write access to the portfolio can create
+        allow create: if canWritePortfolio(getPortfolio(portfolioId)) && 
+                      isValidInvestment(request.resource.data) &&
+                      request.resource.data.portfolioId == portfolioId;
+
+        // Update: anyone with write access to the portfolio can update
+        allow update: if canWritePortfolio(getPortfolio(portfolioId)) &&
+                      isValidInvestment(request.resource.data) &&
+                      request.resource.data.portfolioId == resource.data.portfolioId;
+
+        // Delete: anyone with write access to the portfolio can delete
+        allow delete: if canWritePortfolio(getPortfolio(portfolioId));
+      }
+    }
+  }
+}
