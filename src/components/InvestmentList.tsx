@@ -52,7 +52,7 @@ const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({
   const displayText = selectedValues.length === 0 
     ? placeholder 
     : selectedValues.length === options.length
-      ? `All ${label}s`
+      ? (label === 'Currency' ? 'All Currencies' : `All ${label}s`)
       : options.filter(o => selectedValues.includes(o.value)).map(o => o.label).join(', ');
 
   return (
@@ -69,7 +69,7 @@ const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({
       </div>
 
       {isOpen && (
-        <div className="absolute left-0 mt-2 w-full origin-top-left rounded-xl bg-[#0b0c10] border border-white/10 shadow-2xl z-50 py-1.5 max-h-60 overflow-y-auto glass-panel">
+        <div className="absolute left-0 mt-2 w-max min-w-full md:min-w-[200px] origin-top-left rounded-xl bg-[#0b0c10] border border-white/10 shadow-2xl z-50 py-1.5 max-h-60 overflow-y-auto glass-panel">
           {options.map((option) => {
             const isChecked = selectedValues.includes(option.value);
             return (
@@ -81,13 +81,17 @@ const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({
                 }}
                 className="flex items-center gap-2.5 px-3 py-2 text-xs text-secondary hover:text-white hover:bg-white/5 cursor-pointer select-none"
               >
-                <input
-                  type="checkbox"
-                  checked={isChecked}
-                  readOnly
-                  style={{ pointerEvents: 'none' }}
-                  className="filter-checkbox animate-fade-in"
-                />
+                <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-all duration-150 shrink-0 ${
+                  isChecked 
+                    ? 'bg-teal-400 border-teal-400 text-black shadow-[0_0_8px_rgba(20,184,166,0.3)]' 
+                    : 'border-white/20 bg-transparent text-transparent hover:border-white/40'
+                }`}>
+                  {isChecked && (
+                    <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth="3.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"></path>
+                    </svg>
+                  )}
+                </span>
                 <span>{option.label}</span>
               </div>
             );
@@ -545,6 +549,21 @@ export const InvestmentList: React.FC<InvestmentListProps> = ({
           onChange={setInstitutionFilters}
           placeholder="All Institutions"
         />
+
+        {/* Clear Filters Button */}
+        {(typeFilters.length > 0 || regionFilters.length > 0 || currencyFilters.length > 0 || institutionFilters.length > 0) && (
+          <button
+            onClick={() => {
+              setTypeFilters([]);
+              setRegionFilters([]);
+              setCurrencyFilters([]);
+              setInstitutionFilters([]);
+            }}
+            className="btn btn-secondary py-1.5 px-3 text-xs text-rose-400 hover:text-white border-rose-500/20 hover:border-rose-500/50 hover:bg-rose-500/5 transition-all duration-150 rounded-lg md:ml-auto"
+          >
+            Clear Filters
+          </button>
+        )}
       </div>
 
       {/* Data Table */}
