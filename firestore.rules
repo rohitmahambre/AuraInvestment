@@ -137,7 +137,7 @@ service cloud.firestore {
       return isAuthenticated() && 
              exists(/databases/$(database)/documents/wills/$(portfolioId)) &&
              get(/databases/$(database)/documents/wills/$(portfolioId)).data.status == 'triggered' &&
-             request.auth.token.email.toLowerCase() == get(/databases/$(database)/documents/wills/$(portfolioId)).data.beneficiaryEmail.toLowerCase();
+             request.auth.token.email.lower() == get(/databases/$(database)/documents/wills/$(portfolioId)).data.beneficiaryEmail.lower();
     }
 
     // ===============================================================
@@ -153,7 +153,7 @@ service cloud.firestore {
       // Allow read: owner or beneficiary
       allow read: if isAuthenticated() && (
         request.auth.uid == resource.data.ownerId ||
-        request.auth.token.email.toLowerCase() == resource.data.beneficiaryEmail.toLowerCase()
+        request.auth.token.email.lower() == resource.data.beneficiaryEmail.lower()
       );
 
       // Allow create: only portfolio owner
@@ -168,7 +168,7 @@ service cloud.firestore {
       allow update: if isAuthenticated() && (
         (request.auth.uid == resource.data.ownerId && request.resource.data.ownerId == request.auth.uid) ||
         (
-          request.auth.token.email.toLowerCase() == resource.data.beneficiaryEmail.toLowerCase() &&
+          request.auth.token.email.lower() == resource.data.beneficiaryEmail.lower() &&
           resource.data.status == 'pending' &&
           request.resource.data.status == 'triggered' &&
           request.time > resource.data.expiresAt &&
