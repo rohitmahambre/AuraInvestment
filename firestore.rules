@@ -194,7 +194,7 @@ service cloud.firestore {
       // Allow read: owner or portfolio read collaborators
       allow read: if isAuthenticated() && (
         request.auth.uid == resource.data.ownerId ||
-        request.auth.token.email.lower() in get(/databases/$(database)/documents/portfolios/$(resource.data.portfolioId)).data.sharedWithEmails
+        canReadPortfolio(getPortfolio(resource.data.portfolioId))
       );
 
       // Allow create: authenticated and owner matching request auth, and is owner/editor of parent portfolio
