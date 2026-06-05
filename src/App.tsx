@@ -7,6 +7,7 @@ import { CSVImporter } from './components/CSVImporter';
 import { SharingSettings } from './components/SharingSettings';
 import { AuraAdvisor } from './components/AuraAdvisor';
 import { MutualFundOverlap } from './components/MutualFundOverlap';
+import { GoalPlanner } from './components/GoalPlanner';
 import type { Portfolio, Investment, ExchangeRates, InvestmentCurrency } from './types';
 import { fetchExchangeRates } from './utils/exchangeRates';
 import { 
@@ -24,12 +25,12 @@ import {
   TrendingUp, LayoutDashboard, LineChart, 
   FileSpreadsheet, Users, LogOut, ChevronRight,
   User, RefreshCw, AlertCircle, Plus, Folder,
-  Layers
+  Layers, Target
 } from 'lucide-react';
 
 function DashboardShell() {
   const { user, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState<'overview' | 'investments' | 'import' | 'sharing' | 'overlap'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'investments' | 'import' | 'sharing' | 'overlap' | 'goals'>('overview');
   
   // Portfolios
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
@@ -504,6 +505,24 @@ function DashboardShell() {
 
             <button
               onClick={() => {
+                console.log("Tab clicked: goals");
+                setActiveTab('goals');
+              }}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                activeTab === 'goals'
+                  ? 'bg-teal-500/10 text-teal-400 border-l-2 border-teal-500'
+                  : 'text-secondary hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <span className="flex items-center gap-2.5">
+                <Target className="w-4 h-4" />
+                Goal Planner
+              </span>
+              <ChevronRight className="w-3.5 h-3.5 opacity-60" />
+            </button>
+
+            <button
+              onClick={() => {
                 console.log("Tab clicked: import");
                 setActiveTab('import');
               }}
@@ -657,6 +676,26 @@ function DashboardShell() {
               rates={rates}
               displayCurrency={displayCurrency}
             />
+          )}
+
+          {activeTab === 'goals' && (
+            activePortfolio ? (
+              <GoalPlanner
+                portfolioId={activePortfolio.id}
+                investments={investments}
+                rates={rates}
+                user={user}
+                canWrite={canWrite}
+              />
+            ) : (
+              <div className="glass-panel p-12 text-center flex flex-col items-center justify-center">
+                <AlertCircle className="w-16 h-16 text-yellow-500/60 mb-4" />
+                <h3 className="text-xl font-bold mb-2">No Active Portfolio</h3>
+                <p className="text-secondary max-w-sm">
+                  Please select or create a portfolio from the sidebar workspace selector to configure goals.
+                </p>
+              </div>
+            )
           )}
         </main>
       </div>
