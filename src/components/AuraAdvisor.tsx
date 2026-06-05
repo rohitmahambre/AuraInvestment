@@ -30,7 +30,7 @@ export const AuraAdvisor: React.FC<AuraAdvisorProps> = ({
   const [apiKey, setApiKey] = useState<string>('');
   const [showKeyInput, setShowKeyInput] = useState<boolean>(false);
   const [tempKey, setTempKey] = useState<string>('');
-  const [isEnvKey, setIsEnvKey] = useState<boolean>(false);
+  const [keySource, setKeySource] = useState<'env' | 'firestore' | 'local' | ''>('');
   
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState<string>('');
@@ -51,7 +51,7 @@ export const AuraAdvisor: React.FC<AuraAdvisorProps> = ({
       if (envKey) {
         setApiKey(envKey);
         setTempKey(envKey);
-        setIsEnvKey(true);
+        setKeySource('env');
         setShowKeyInput(false);
         return;
       }
@@ -65,7 +65,7 @@ export const AuraAdvisor: React.FC<AuraAdvisorProps> = ({
           if (keyData) {
             setApiKey(keyData);
             setTempKey(keyData);
-            setIsEnvKey(true); // Treat as system-level key
+            setKeySource('firestore');
             setShowKeyInput(false);
             return;
           }
@@ -79,7 +79,7 @@ export const AuraAdvisor: React.FC<AuraAdvisorProps> = ({
       if (savedKey) {
         setApiKey(savedKey);
         setTempKey(savedKey);
-        setIsEnvKey(false);
+        setKeySource('local');
         setShowKeyInput(false);
       } else {
         setShowKeyInput(true);
@@ -108,10 +108,11 @@ export const AuraAdvisor: React.FC<AuraAdvisorProps> = ({
     try {
       const docRef = doc(db, 'secrets', 'gemini');
       await setDoc(docRef, { key: cleanKey, updatedAt: new Date() });
-      setIsEnvKey(true); // Treat as system-level key
+      setKeySource('firestore');
       console.log("Gemini API key saved securely to Firestore.");
     } catch (err) {
       console.warn("Could not save key to Firestore. Storing locally instead.", err);
+      setKeySource('local');
     }
   };
 
@@ -121,11 +122,11 @@ export const AuraAdvisor: React.FC<AuraAdvisorProps> = ({
     setApiKey('');
     setTempKey('');
     setShowKeyInput(true);
+    setKeySource('');
     
     try {
       const docRef = doc(db, 'secrets', 'gemini');
       await deleteDoc(docRef);
-      setIsEnvKey(false);
       console.log("Gemini API key removed from Firestore.");
     } catch (err) {
       console.warn("Could not delete key from Firestore.", err);
@@ -496,9 +497,13 @@ ${portfolioContext}`;
               {/* Chat settings indicator footer */}
               {apiKey && (
                 <div className="px-4 py-1.5 border-t border-white/5 bg-white/[0.01] flex items-center justify-between text-[10px] text-secondary shrink-0">
-                  {isEnvKey ? (
+                  {keySource === 'env' && (
                     <span className="truncate text-teal-400 font-semibold">Loaded from .env config</span>
-                  ) : (
+                  )}
+                  {keySource === 'firestore' && (
+                    <span className="truncate text-emerald-400 font-semibold flex items-center gap-1">🛡️ Secured via Aura Vault</span>
+                  )}
+                  {keySource === 'local' && (
                     <>
                       <span className="truncate">Key active: ...{apiKey.substring(apiKey.length - 6)}</span>
                       <button 
