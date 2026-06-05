@@ -140,13 +140,49 @@ service cloud.firestore {
              request.auth.token.email.lower() == get(/databases/$(database)/documents/wills/$(portfolioId)).data.beneficiaryEmail.lower();
     }
 
+    // Validate Will schema
+    function isValidWill(data) {
+      return data.keys().hasOnly([
+        'portfolioId', 'portfolioName', 'ownerId', 'ownerEmail',
+        'beneficiaryEmail', 'status', 'initiatedAt', 'expiresAt',
+        'lastSeenAt', 'createdAt', 'updatedAt', 'triggeredAt'
+      ]) &&
+      data.portfolioId is string &&
+      data.portfolioName is string && data.portfolioName.size() > 0 && data.portfolioName.size() <= 100 &&
+      data.ownerId is string && data.ownerId.size() > 0 &&
+      data.ownerEmail is string && isValidEmail(data.ownerEmail) &&
+      isValidEmail(data.beneficiaryEmail) &&
+      data.status in ['pending', 'triggered'] &&
+      data.initiatedAt is timestamp &&
+      data.expiresAt is timestamp &&
+      data.lastSeenAt is timestamp &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp &&
+      (!('triggeredAt' in data) || data.triggeredAt is timestamp);
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
 
     match /secrets/gemini {
-      allow read: if request.auth != null;
+      allow read: if request.auth != null && request.auth.token.email == "admin@example.com";
       allow write: if request.auth != null && request.auth.token.email == "admin@example.com";
+    }
+
+    match /mail/{mailId} {
+      allow create: if isAuthenticated() &&
+                    request.resource.data.keys().hasOnly(['to', 'message']) &&
+                    request.resource.data.to is string &&
+                    isValidEmail(request.resource.data.to) &&
+                    request.resource.data.message is map &&
+                    request.resource.data.message.keys().hasOnly(['subject', 'html']) &&
+                    request.resource.data.message.subject is string &&
+                    request.resource.data.message.subject.size() > 0 &&
+                    request.resource.data.message.subject.size() <= 200 &&
+                    request.resource.data.message.html is string &&
+                    request.resource.data.message.html.size() > 0 &&
+                    request.resource.data.message.html.size() <= 5000;
     }
 
     match /wills/{portfolioId} {
@@ -160,13 +196,18 @@ service cloud.firestore {
       allow create: if isAuthenticated() &&
                     request.auth.uid == get(/databases/$(database)/documents/portfolios/$(portfolioId)).data.ownerId &&
                     request.resource.data.ownerId == request.auth.uid &&
-                    request.resource.data.portfolioId == portfolioId;
+                    request.resource.data.portfolioId == portfolioId &&
+                    isValidWill(request.resource.data);
 
       // Allow update:
       // 1. Owner updates config (e.g. details, beneficiary, status)
       // 2. Beneficiary triggers it if expired
       allow update: if isAuthenticated() && (
-        (request.auth.uid == resource.data.ownerId && request.resource.data.ownerId == request.auth.uid) ||
+        (
+          request.auth.uid == resource.data.ownerId && 
+          request.resource.data.ownerId == request.auth.uid &&
+          isValidWill(request.resource.data)
+        ) ||
         (
           request.auth.token.email.lower() == resource.data.beneficiaryEmail.lower() &&
           resource.data.status == 'pending' &&
@@ -174,7 +215,8 @@ service cloud.firestore {
           request.time > resource.data.expiresAt &&
           request.resource.data.beneficiaryEmail == resource.data.beneficiaryEmail &&
           request.resource.data.ownerId == resource.data.ownerId &&
-          request.resource.data.portfolioId == resource.data.portfolioId
+          request.resource.data.portfolioId == resource.data.portfolioId &&
+          isValidWill(request.resource.data)
         )
       );
 
