@@ -878,3 +878,47 @@ tr {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+/* Aura Premium Loader Animations */
+@keyframes aura-pulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: blur(40px);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.25);
+    filter: blur(60px);
+    opacity: 0.85;
+  }
+}
+.animate-aura-pulse {
+  animation: aura-pulse 4s ease-in-out infinite;
+}
+
+@keyframes aura-breathe {
+  0%, 100% {
+    transform: scale(0.95);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 1;
+  }
+}
+.animate-aura-breathe {
+  animation: aura-breathe 3s ease-in-out infinite;
+}
+
+@keyframes aura-orbit {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+.animate-aura-orbit {
+  animation: aura-orbit 6s linear infinite;
+}
+
+

@@ -276,9 +276,41 @@ function DashboardShell() {
   // Master Loader
   if (portfoliosLoading || ratesLoading || !rates) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-base">
-        <div className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-secondary text-sm font-semibold tracking-wider uppercase">Loading tracker matrix...</p>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-base relative overflow-hidden">
+        {/* Core Aura Glowing Background Orbs */}
+        <div className="absolute w-[300px] h-[300px] rounded-full bg-gradient-to-tr from-teal-500/15 to-indigo-600/15 animate-aura-pulse blur-[60px] -z-10 pointer-events-none"></div>
+        <div className="absolute w-[200px] h-[200px] rounded-full bg-teal-400/10 animate-aura-pulse blur-[40px] -z-10 pointer-events-none" style={{ animationDelay: '-2s' }}></div>
+
+        {/* Loader Container */}
+        <div className="flex flex-col items-center text-center gap-6 z-10">
+          {/* Logo / Ring container */}
+          <div className="relative w-24 h-24 flex items-center justify-center">
+            {/* Spinning Aura Orbit ring */}
+            <div className="absolute inset-0 rounded-full border border-teal-500/30 border-t-teal-400 border-r-indigo-500/10 border-b-indigo-500/30 border-l-teal-500/10 animate-aura-orbit"></div>
+            
+            {/* Inner pulsing orb */}
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-teal-500 to-indigo-600 flex items-center justify-center shadow-[0_0_30px_rgba(20,184,166,0.3)] animate-aura-breathe">
+              <TrendingUp className="w-9 h-9 text-black font-bold" />
+            </div>
+          </div>
+
+          {/* Typography */}
+          <div className="space-y-2 animate-aura-breathe" style={{ animationDelay: '0.5s' }}>
+            <h1 className="text-2xl font-black tracking-wider uppercase">
+              <span className="gradient-text">Aura</span> Smart Matrix
+            </h1>
+            <p className="text-secondary text-xs font-mono tracking-widest uppercase opacity-75">
+              Syncing Ledger & Market Valuations
+            </p>
+          </div>
+
+          {/* Dynamic loading dots indicator */}
+          <div className="flex gap-1.5 justify-center items-center mt-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-teal-400 animate-bounce" style={{ animationDelay: '0ms' }}></span>
+            <span className="w-2.5 h-2.5 rounded-full bg-teal-400 animate-bounce" style={{ animationDelay: '150ms' }}></span>
+            <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '300ms' }}></span>
+          </div>
+        </div>
       </div>
     );
   }
