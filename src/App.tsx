@@ -402,6 +402,24 @@ function DashboardShell() {
 
             <button
               onClick={() => {
+                console.log("Tab clicked: overlap");
+                setActiveTab('overlap');
+              }}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                activeTab === 'overlap'
+                  ? 'bg-teal-500/10 text-teal-400 border-l-2 border-teal-500'
+                  : 'text-secondary hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <span className="flex items-center gap-2.5">
+                <Layers className="w-4 h-4" />
+                MF Overlap
+              </span>
+              <ChevronRight className="w-3.5 h-3.5 opacity-60" />
+            </button>
+
+            <button
+              onClick={() => {
                 console.log("Tab clicked: import");
                 setActiveTab('import');
               }}
@@ -432,24 +450,6 @@ function DashboardShell() {
               <span className="flex items-center gap-2.5">
                 <Users className="w-4 h-4" />
                 Access Control
-              </span>
-              <ChevronRight className="w-3.5 h-3.5 opacity-60" />
-            </button>
-
-            <button
-              onClick={() => {
-                console.log("Tab clicked: overlap");
-                setActiveTab('overlap');
-              }}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${
-                activeTab === 'overlap'
-                  ? 'bg-teal-500/10 text-teal-400 border-l-2 border-teal-500'
-                  : 'text-secondary hover:text-white hover:bg-white/5'
-              }`}
-            >
-              <span className="flex items-center gap-2.5">
-                <Layers className="w-4 h-4" />
-                MF Overlap
               </span>
               <ChevronRight className="w-3.5 h-3.5 opacity-60" />
             </button>
