@@ -921,4 +921,105 @@ tr {
   animation: aura-orbit 6s linear infinite;
 }
 
+/* SVG Chart Line & Tip Animations */
+@keyframes aura-draw-line {
+  0% {
+    stroke-dashoffset: 250;
+  }
+  45%, 55% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -250;
+  }
+}
+.animate-aura-draw-line {
+  stroke-dasharray: 250;
+  animation: aura-draw-line 3.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes aura-tip-ring-pulse {
+  0%, 35% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  45% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  65% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.animate-aura-tip-pulse {
+  transform-origin: 190px 15px;
+  animation: aura-tip-ring-pulse 3.2s ease-out infinite;
+}
+
+@keyframes aura-tip-fade {
+  0%, 30% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  40%, 65% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  75%, 100% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+}
+.animate-aura-tip-glow {
+  transform-origin: 190px 15px;
+  animation: aura-tip-fade 3.2s ease-in-out infinite;
+}
+
+@keyframes aura-area-fade {
+  0%, 20% {
+    opacity: 0;
+  }
+  45%, 55% {
+    opacity: 1;
+  }
+  75%, 100% {
+    opacity: 0;
+  }
+}
+.animate-aura-area {
+  animation: aura-area-fade 3.2s ease-in-out infinite;
+}
+
+/* Floating growth particles */
+@keyframes aura-float-up {
+  0% {
+    transform: translateY(30px) scale(0.6);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.6;
+  }
+  80% {
+    opacity: 0.6;
+  }
+  100% {
+    transform: translateY(-80px) scale(1);
+    opacity: 0;
+  }
+}
+.animate-aura-float-1 {
+  animation: aura-float-up 4s ease-in-out infinite;
+}
+.animate-aura-float-2 {
+  animation: aura-float-up 3s ease-in-out infinite;
+}
+.animate-aura-float-3 {
+  animation: aura-float-up 5s ease-in-out infinite;
+}
+
+
 

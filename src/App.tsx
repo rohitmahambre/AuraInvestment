@@ -49,6 +49,28 @@ function DashboardShell() {
   const [newPortName, setNewPortName] = useState('');
   const [creatingPort, setCreatingPort] = useState(false);
 
+  // Dynamic Loader States
+  const [loadingStep, setLoadingStep] = useState(0);
+  const loadingPhrases = [
+    "Assembling asset allocations...",
+    "Querying live market tickers...",
+    "Drawing portfolio variance trajectories...",
+    "Syncing estate switches...",
+    "Optimizing tracking analytics..."
+  ];
+
+  useEffect(() => {
+    let interval: any;
+    if (portfoliosLoading || ratesLoading || !rates) {
+      interval = setInterval(() => {
+        setLoadingStep((prev) => (prev + 1) % loadingPhrases.length);
+      }, 1600);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [portfoliosLoading, ratesLoading, rates]);
+
   // 1. Fetch Exchange Rates
   useEffect(() => {
     const getRates = async () => {
@@ -278,37 +300,67 @@ function DashboardShell() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-base relative overflow-hidden">
         {/* Core Aura Glowing Background Orbs */}
-        <div className="absolute w-[300px] h-[300px] rounded-full bg-gradient-to-tr from-teal-500/15 to-indigo-600/15 animate-aura-pulse blur-[60px] -z-10 pointer-events-none"></div>
-        <div className="absolute w-[200px] h-[200px] rounded-full bg-teal-400/10 animate-aura-pulse blur-[40px] -z-10 pointer-events-none" style={{ animationDelay: '-2s' }}></div>
+        <div className="absolute w-[350px] h-[350px] rounded-full bg-gradient-to-tr from-teal-500/10 to-indigo-600/10 animate-aura-pulse blur-[60px] -z-10 pointer-events-none"></div>
+        <div className="absolute w-[250px] h-[250px] rounded-full bg-teal-400/8 animate-aura-pulse blur-[50px] -z-10 pointer-events-none" style={{ animationDelay: '-2s' }}></div>
+
+        {/* Floating growth particle bubbles */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none -z-5 select-none">
+          <span className="absolute left-[35%] bottom-[20%] text-teal-400/40 font-bold text-lg animate-aura-float-1">+</span>
+          <span className="absolute left-[45%] bottom-[15%] text-teal-500/30 font-bold text-sm animate-aura-float-2">$</span>
+          <span className="absolute right-[38%] bottom-[25%] text-emerald-400/40 font-bold text-xl animate-aura-float-3">%</span>
+          <span className="absolute right-[46%] bottom-[10%] text-teal-400/25 font-bold text-base animate-aura-float-1" style={{ animationDelay: '-1.5s' }}>+</span>
+          <span className="absolute left-[52%] bottom-[30%] text-indigo-400/30 font-bold text-sm animate-aura-float-2" style={{ animationDelay: '-0.8s' }}>$</span>
+        </div>
 
         {/* Loader Container */}
-        <div className="flex flex-col items-center text-center gap-6 z-10">
-          {/* Logo / Ring container */}
-          <div className="relative w-24 h-24 flex items-center justify-center">
-            {/* Spinning Aura Orbit ring */}
-            <div className="absolute inset-0 rounded-full border border-teal-500/30 border-t-teal-400 border-r-indigo-500/10 border-b-indigo-500/30 border-l-teal-500/10 animate-aura-orbit"></div>
-            
-            {/* Inner pulsing orb */}
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-teal-500 to-indigo-600 flex items-center justify-center shadow-[0_0_30px_rgba(20,184,166,0.3)] animate-aura-breathe">
-              <TrendingUp className="w-9 h-9 text-black font-bold" />
-            </div>
+        <div className="flex flex-col items-center text-center gap-8 z-10 px-6">
+          {/* Growing Line Chart SVG */}
+          <div className="relative flex items-center justify-center p-6 bg-surface-solid/40 border border-light rounded-3xl shadow-glow">
+            <svg width="220" height="120" viewBox="0 0 200 120" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-56 h-32 overflow-visible">
+              {/* Faint Grid Lines */}
+              <line x1="10" y1="100" x2="190" y2="100" stroke="rgba(255,255,255,0.03)" strokeWidth="1" strokeDasharray="4 4" />
+              <line x1="10" y1="70" x2="190" y2="70" stroke="rgba(255,255,255,0.03)" strokeWidth="1" strokeDasharray="4 4" />
+              <line x1="10" y1="40" x2="190" y2="40" stroke="rgba(255,255,255,0.03)" strokeWidth="1" strokeDasharray="4 4" />
+              <line x1="10" y1="10" x2="190" y2="10" stroke="rgba(255,255,255,0.03)" strokeWidth="1" strokeDasharray="4 4" />
+              
+              <defs>
+                {/* Main Curve Gradient */}
+                <linearGradient id="chart-grad" x1="0" y1="120" x2="200" y2="0" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stopColor="hsl(263, 90%, 65%)" />
+                  <stop offset="50%" stopColor="hsl(172, 85%, 45%)" />
+                  <stop offset="100%" stopColor="hsl(45, 95%, 60%)" />
+                </linearGradient>
+                {/* Area Under Curve Fill Gradient */}
+                <linearGradient id="area-grad" x1="0" y1="0" x2="0" y2="120" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stopColor="rgba(172, 85%, 45%, 0.12)" />
+                  <stop offset="100%" stopColor="rgba(172, 85%, 45%, 0)" />
+                </linearGradient>
+              </defs>
+
+              {/* Area Under Curve (Fade in/out) */}
+              <path d="M 10 100 Q 50 90, 80 60 T 150 40 T 190 15 L 190 100 Z" fill="url(#area-grad)" className="animate-aura-area" />
+
+              {/* The Drawing Chart Curve */}
+              <path d="M 10 100 Q 50 90, 80 60 T 150 40 T 190 15" stroke="url(#chart-grad)" strokeWidth="3" strokeLinecap="round" className="animate-aura-draw-line" />
+
+              {/* Pulse at peak */}
+              <circle cx="190" cy="15" r="4" fill="hsl(45, 95%, 60%)" className="animate-aura-tip-glow" />
+              <circle cx="190" cy="15" r="10" stroke="hsl(45, 95%, 60%)" strokeWidth="1.5" className="animate-aura-tip-pulse" />
+            </svg>
           </div>
 
-          {/* Typography */}
-          <div className="space-y-2 animate-aura-breathe" style={{ animationDelay: '0.5s' }}>
-            <h1 className="text-2xl font-black tracking-wider uppercase">
-              <span className="gradient-text">Aura</span> Smart Matrix
+          {/* Typography & Phased Status Messages */}
+          <div className="space-y-3">
+            <h1 className="text-3xl font-extrabold tracking-widest uppercase">
+              <span className="gradient-text">AURA</span>
             </h1>
-            <p className="text-secondary text-xs font-mono tracking-widest uppercase opacity-75">
-              Syncing Ledger & Market Valuations
-            </p>
-          </div>
-
-          {/* Dynamic loading dots indicator */}
-          <div className="flex gap-1.5 justify-center items-center mt-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-teal-400 animate-bounce" style={{ animationDelay: '0ms' }}></span>
-            <span className="w-2.5 h-2.5 rounded-full bg-teal-400 animate-bounce" style={{ animationDelay: '150ms' }}></span>
-            <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '300ms' }}></span>
+            
+            {/* Dynamic Loading Phrase */}
+            <div className="h-6 flex items-center justify-center">
+              <p className="text-secondary text-sm font-semibold tracking-wider font-mono animate-pulse">
+                {loadingPhrases[loadingStep]}
+              </p>
+            </div>
           </div>
         </div>
       </div>
