@@ -34,8 +34,25 @@ export const SharingSettings: React.FC<SharingSettingsProps> = ({
   const [willSuccess, setWillSuccess] = useState('');
   const [inheritedPortfolios, setInheritedPortfolios] = useState<Portfolio[]>([]);
   const [loadingInherited, setLoadingInherited] = useState(true);
+  
+  const WILL_MESSAGE_TEMPLATE = `Demat Account Details:
+- DP ID: [Enter DP ID]
+- Client ID: [Enter Client ID]
+- Broker: [e.g. Zerodha, Groww, AngelOne]
+
+Bank Accounts:
+- Bank Name: [Bank Name]
+- Account Number: [Account Number]
+- IFSC Code: [IFSC Code]
+
+Other Assets & Instructions:
+[Enter any additional locker keys, nominee forms, or general settlement instructions here]`;
+
+  const [willDurationDays, setWillDurationDays] = useState<number>(7);
+  const [willCustomMessage, setWillCustomMessage] = useState<string>('');
 
   const isOwner = activePortfolio && user && activePortfolio.ownerId === user.uid;
+  const isInherited = activePortfolio && inheritedPortfolios.some((p) => p.id === activePortfolio.id);
 
   // Load standard shared portfolios
   useEffect(() => {
@@ -67,6 +84,13 @@ export const SharingSettings: React.FC<SharingSettingsProps> = ({
     loadInheritedPortfolios();
   }, [user, activePortfolio]);
 
+  // Pre-populate template if no Will exists
+  useEffect(() => {
+    if (!will && !willCustomMessage) {
+      setWillCustomMessage(WILL_MESSAGE_TEMPLATE);
+    }
+  }, [will]);
+
   const loadWillForActivePortfolio = async () => {
     if (!activePortfolio || !user) return;
     try {
@@ -78,12 +102,22 @@ export const SharingSettings: React.FC<SharingSettingsProps> = ({
       if (docSnap.exists()) {
         const willData = docSnap.data();
         setWill(willData);
-        setWillBeneficiaryEmail(willData.beneficiaryEmail || '');
+        if (willData.beneficiaryEmails && Array.isArray(willData.beneficiaryEmails)) {
+          setWillBeneficiaryEmail(willData.beneficiaryEmails.join(', '));
+        } else if (willData.beneficiaryEmail) {
+          setWillBeneficiaryEmail(willData.beneficiaryEmail);
+        } else {
+          setWillBeneficiaryEmail('');
+        }
         
-        // If owner loads a pending switch, automatically reset the 7-day timer (act as check-in)
+        const duration = willData.durationDays || 7;
+        setWillDurationDays(duration);
+        setWillCustomMessage(willData.customMessage || '');
+        
+        // If owner loads a pending switch, automatically reset the countdown timer (act as check-in)
         if (willData.status === 'pending' && isOwner) {
           const now = new Date();
-          const newExpiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days from now
+          const newExpiresAt = new Date(now.getTime() + duration * 24 * 60 * 60 * 1000); // custom duration days
           await updateDoc(docRef, {
             lastSeenAt: now,
             expiresAt: newExpiresAt,
@@ -94,11 +128,13 @@ export const SharingSettings: React.FC<SharingSettingsProps> = ({
             lastSeenAt: now,
             expiresAt: newExpiresAt
           });
-          console.log("Dead Man's Switch postponed. Active session reset countdown to 7 days.");
+          console.log(`Dead Man's Switch postponed. Active session reset countdown to ${duration} days.`);
         }
       } else {
         setWill(null);
         setWillBeneficiaryEmail('');
+        setWillDurationDays(7);
+        setWillCustomMessage(WILL_MESSAGE_TEMPLATE);
       }
     } catch (err) {
       console.error("Failed to load portfolio Will details", err);
@@ -114,63 +150,117 @@ export const SharingSettings: React.FC<SharingSettingsProps> = ({
       const willsRef = collection(db, 'wills');
       const now = new Date();
 
-      // Step 1: Scan and auto-trigger any pending Wills that have expired
-      const qPending = query(
+      // Step 1: Scan and auto-trigger any pending Wills that have expired (check both array and legacy fields)
+      const qPendingArray = query(
+        willsRef,
+        where('beneficiaryEmails', 'array-contains', user.email.toLowerCase()),
+        where('status', '==', 'pending')
+      );
+      const qPendingLegacy = query(
         willsRef,
         where('beneficiaryEmail', '==', user.email.toLowerCase()),
         where('status', '==', 'pending')
       );
-      const pendingSnap = await getDocs(qPending);
+
+      const [pendingSnapArray, pendingSnapLegacy] = await Promise.all([
+        getDocs(qPendingArray),
+        getDocs(qPendingLegacy)
+      ]);
+
       const expiredWillsToTrigger: any[] = [];
-      
-      pendingSnap.forEach((docSnap) => {
-        const data = docSnap.data();
-        const expiresAt = data.expiresAt?.toDate();
-        if (expiresAt && now > expiresAt) {
-          expiredWillsToTrigger.push(docSnap);
-        }
-      });
+      const seenWillIds = new Set<string>();
+
+      const processWillSnap = (snap: any) => {
+        snap.forEach((docSnap: any) => {
+          if (seenWillIds.has(docSnap.id)) return;
+          seenWillIds.add(docSnap.id);
+          const data = docSnap.data();
+          const expiresAt = data.expiresAt?.toDate();
+          if (expiresAt && now > expiresAt) {
+            expiredWillsToTrigger.push(docSnap);
+          }
+        });
+      };
+
+      processWillSnap(pendingSnapArray);
+      processWillSnap(pendingSnapLegacy);
 
       if (expiredWillsToTrigger.length > 0) {
         const batch = writeBatch(db);
         for (const willDoc of expiredWillsToTrigger) {
+          const willData = willDoc.data();
           batch.update(willDoc.ref, { 
             status: 'triggered', 
             triggeredAt: now,
             updatedAt: now 
           });
           
-          // Log automated mail delivery task
-          const mailRef = doc(collection(db, 'mail'));
-          batch.set(mailRef, {
-            to: user.email.toLowerCase(),
-            message: {
-              subject: `Aura Investment: Inherited Portfolio Access Unlocked`,
-              html: `<h3>Aura Investment Tracker</h3>
-                     <p>You have received inheritance access to the portfolio <strong>${willDoc.data().portfolioName}</strong> via a Dead Man's Switch set up by <strong>${willDoc.data().ownerEmail}</strong>.</p>
-                     <p>Log in to your account at <a href="https://melavo-514b7.web.app">Aura Investment Tracker</a> to view details.</p>`
-            }
-          });
+          const customMessageHtml = willData.customMessage ? `
+            <div style="margin-top: 20px; padding: 15px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; color: #1e293b; font-family: sans-serif;">
+              <h4 style="margin-top: 0; color: #e11d48; font-size: 15px; font-weight: bold;">Message & Settlement Instructions from Owner:</h4>
+              <pre style="white-space: pre-wrap; font-family: monospace; font-size: 13px; margin: 0; line-height: 1.5; color: #334155;">${willData.customMessage}</pre>
+            </div>
+          ` : '';
+
+          // Log automated mail delivery task for all beneficiaries
+          const beneficiariesList = willData.beneficiaryEmails && Array.isArray(willData.beneficiaryEmails)
+            ? willData.beneficiaryEmails
+            : [willData.beneficiaryEmail];
+
+          for (const bEmail of beneficiariesList) {
+            if (!bEmail) continue;
+            const mailRef = doc(collection(db, 'mail'));
+            batch.set(mailRef, {
+              to: bEmail.toLowerCase(),
+              message: {
+                subject: `Aura Investment: Inherited Portfolio Access Unlocked`,
+                html: `<h3>Aura Investment Tracker</h3>
+                       <p>You have received inheritance access to the portfolio <strong>${willData.portfolioName}</strong> via a Dead Man's Switch set up by <strong>${willData.ownerEmail}</strong>.</p>
+                       <p>Log in to your account at <a href="https://melavo-514b7.web.app">Aura Investment Tracker</a> to view details.</p>
+                       ${customMessageHtml}`
+              }
+            });
+          }
         }
         await batch.commit();
         console.log("Successfully triggered expired portfolio Wills.");
       }
 
       // Step 2: Load triggered inherited portfolios
-      const qTriggered = query(
+      const qTriggeredArray = query(
+        willsRef,
+        where('beneficiaryEmails', 'array-contains', user.email.toLowerCase()),
+        where('status', '==', 'triggered')
+      );
+      const qTriggeredLegacy = query(
         willsRef,
         where('beneficiaryEmail', '==', user.email.toLowerCase()),
         where('status', '==', 'triggered')
       );
-      const triggeredSnap = await getDocs(qTriggered);
+
+      const [triggeredSnapArray, triggeredSnapLegacy] = await Promise.all([
+        getDocs(qTriggeredArray),
+        getDocs(qTriggeredLegacy)
+      ]);
+
       const list: Portfolio[] = [];
-      
-      for (const docSnap of triggeredSnap.docs) {
+      const seenTriggeredPortfolioIds = new Set<string>();
+
+      const processTriggeredDoc = async (docSnap: any) => {
         const willData = docSnap.data();
+        if (seenTriggeredPortfolioIds.has(willData.portfolioId)) return;
+        seenTriggeredPortfolioIds.add(willData.portfolioId);
         const portSnap = await getDoc(doc(db, 'portfolios', willData.portfolioId));
         if (portSnap.exists()) {
           list.push(portSnap.data() as Portfolio);
         }
+      };
+
+      for (const docSnap of triggeredSnapArray.docs) {
+        await processTriggeredDoc(docSnap);
+      }
+      for (const docSnap of triggeredSnapLegacy.docs) {
+        await processTriggeredDoc(docSnap);
       }
       setInheritedPortfolios(list);
     } catch (err) {
@@ -277,20 +367,37 @@ export const SharingSettings: React.FC<SharingSettingsProps> = ({
     setWillSuccess('');
     if (!activePortfolio || !user || !isOwner) return;
 
-    const beneficiary = willBeneficiaryEmail.trim().toLowerCase();
-    if (!beneficiary) {
-      setWillError("Please enter a valid email for the beneficiary.");
+    // Parse comma-separated list of beneficiary emails
+    const beneficiaries = willBeneficiaryEmail
+      .split(',')
+      .map(email => email.trim().toLowerCase())
+      .filter(email => email !== '');
+
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    const invalidEmail = beneficiaries.find(email => !emailRegex.test(email));
+    
+    if (invalidEmail) {
+      setWillError(`"${invalidEmail}" is not a valid email address.`);
       return;
     }
-    if (beneficiary === user.email?.toLowerCase()) {
-      setWillError("You cannot name yourself as the beneficiary.");
+    if (beneficiaries.length === 0) {
+      setWillError("Please enter at least one beneficiary email.");
+      return;
+    }
+    if (user?.email && beneficiaries.includes(user.email.toLowerCase())) {
+      setWillError("You cannot name yourself as a beneficiary.");
+      return;
+    }
+    if (beneficiaries.length > 5) {
+      setWillError("You can designate a maximum of 5 beneficiaries.");
       return;
     }
 
     setWillProcessing(true);
     try {
       const now = new Date();
-      const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days
+      const duration = willDurationDays || 7;
+      const expiresAt = new Date(now.getTime() + duration * 24 * 60 * 60 * 1000); // custom duration days
       
       const docRef = doc(db, 'wills', activePortfolio.id);
       const willData = {
@@ -298,31 +405,35 @@ export const SharingSettings: React.FC<SharingSettingsProps> = ({
         portfolioName: activePortfolio.name,
         ownerId: user.uid,
         ownerEmail: user.email,
-        beneficiaryEmail: beneficiary,
+        beneficiaryEmails: beneficiaries,
         status: 'pending',
         initiatedAt: now,
         expiresAt,
         lastSeenAt: now,
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
+        durationDays: duration,
+        customMessage: willCustomMessage.trim()
       };
 
       await setDoc(docRef, willData);
 
-      // Log mail delivery request in mail collection
-      await addDoc(collection(db, 'mail'), {
-        to: beneficiary,
-        message: {
-          subject: `Aura Investment: Portfolio Will setup confirmation`,
-          html: `<h3>Aura Investment Tracker</h3>
-                 <p><strong>${user.email}</strong> has designated you as the beneficiary of their portfolio Will (Dead Man's Switch).</p>
-                 <p>If they do not visit the site or log in for 7 days, you will automatically receive read access to their portfolio <strong>${activePortfolio.name}</strong>.</p>
-                 <p>No action is required from your side at this time.</p>`
-        }
-      });
+      // Log mail delivery requests for all beneficiaries
+      for (const bEmail of beneficiaries) {
+        await addDoc(collection(db, 'mail'), {
+          to: bEmail,
+          message: {
+            subject: `Aura Investment: Portfolio Will setup confirmation`,
+            html: `<h3>Aura Investment Tracker</h3>
+                   <p><strong>${user.email}</strong> has designated you as a beneficiary of their portfolio Will (Dead Man's Switch).</p>
+                   <p>If they do not visit the site or log in for ${duration} days, you will automatically receive read access to their portfolio <strong>${activePortfolio.name}</strong>.</p>
+                   <p>No action is required from your side at this time.</p>`
+          }
+        });
+      }
 
       setWill(willData);
-      setWillSuccess(`Aura Will initiated successfully! Beneficiary: ${beneficiary}`);
+      setWillSuccess(`Aura Will initiated successfully for: ${beneficiaries.join(', ')}`);
     } catch (err: any) {
       console.error(err);
       setWillError(err.message || "Failed to initiate portfolio Will.");
@@ -342,6 +453,8 @@ export const SharingSettings: React.FC<SharingSettingsProps> = ({
       await deleteDoc(docRef);
       setWill(null);
       setWillBeneficiaryEmail('');
+      setWillDurationDays(7);
+      setWillCustomMessage(WILL_MESSAGE_TEMPLATE);
       setWillSuccess("Portfolio Will has been deactivated.");
     } catch (err: any) {
       console.error(err);
@@ -369,6 +482,25 @@ export const SharingSettings: React.FC<SharingSettingsProps> = ({
         <h2 className="text-3xl font-extrabold tracking-tight">Access Control</h2>
         <p className="text-secondary text-sm">Manage access permissions for this portfolio and view folders shared with you.</p>
       </div>
+
+      {isInherited && will && (
+        <div className="glass-panel p-6 border-rose-500/20 bg-rose-950/5 space-y-4 animate-fade-in">
+          <div className="flex items-center gap-2 text-rose-400 font-bold">
+            <Heart className="w-5 h-5 text-rose-500 animate-pulse" />
+            <span>Inheritance Instructions & Private Notes</span>
+          </div>
+          <p className="text-xs text-secondary leading-relaxed">
+            The original owner (<strong>{will.ownerEmail}</strong>) left these secure settlement details for you upon portfolio transfer:
+          </p>
+          {will.customMessage ? (
+            <div className="bg-black/40 border border-white/5 p-4 rounded-xl">
+              <pre className="text-xs text-white font-mono whitespace-pre-wrap leading-relaxed">{will.customMessage}</pre>
+            </div>
+          ) : (
+            <div className="text-xs text-muted italic">No custom notes or instructions were left by the owner.</div>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Manage Sharing & Will (Left Panel) */}
@@ -535,7 +667,7 @@ export const SharingSettings: React.FC<SharingSettingsProps> = ({
                   </div>
 
                   <p className="text-xs text-secondary leading-relaxed">
-                    Set up a secure transfer instructions. If you initiate the switch and do not log in or visit the site within **7 days**, your beneficiary will automatically receive read access to this portfolio. Logging in automatically resets your life status timer.
+                    Set up secure transfer instructions. If you initiate the switch and do not log in or visit the site within your chosen timeout period, your beneficiary will automatically receive read access to this portfolio and be emailed your private instructions. Logging in automatically resets your countdown.
                   </p>
 
                   {loadingWill ? (
@@ -546,29 +678,70 @@ export const SharingSettings: React.FC<SharingSettingsProps> = ({
                   ) : !will ? (
                     /* Setup form */
                     <form onSubmit={handleInitiateWill} className="p-4 rounded-xl border border-white/5 bg-white/[0.01] space-y-4">
-                      <div className="text-xs font-bold text-secondary uppercase tracking-wider flex items-center gap-1.5">
-                        <Mail className="w-4 h-4 text-rose-400" />
-                        Designate Beneficiary
-                      </div>
-
-                      <div className="flex flex-col sm:flex-row gap-3">
-                        <div className="flex-grow">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-secondary uppercase tracking-wider flex items-center gap-1.5">
+                            <Mail className="w-4 h-4 text-rose-400" />
+                            Beneficiary Emails
+                          </label>
                           <input
-                            type="email"
+                            type="text"
                             required
-                            placeholder="beneficiary@example.com"
+                            placeholder="spouse@example.com, child@example.com"
                             value={willBeneficiaryEmail}
                             onChange={(e) => setWillBeneficiaryEmail(e.target.value)}
                             disabled={willProcessing}
-                            className="py-2.5 bg-black/40 text-xs w-full border border-white/5 rounded-lg px-3"
+                            className="py-2.5 bg-black/40 text-xs w-full border border-white/5 rounded-lg px-3 focus:outline-none focus:border-rose-500/50"
                           />
+                          <p className="text-[9px] text-muted">Designate up to 5 beneficiaries separated by commas.</p>
                         </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-secondary uppercase tracking-wider flex items-center gap-1.5">
+                            <Calendar className="w-4 h-4 text-rose-400" />
+                            Inactivity Timeout Period
+                          </label>
+                          <select
+                            value={willDurationDays}
+                            onChange={(e) => setWillDurationDays(parseInt(e.target.value))}
+                            disabled={willProcessing}
+                            className="py-2.5 bg-black/40 text-xs w-full border border-white/5 rounded-lg px-3 focus:outline-none focus:border-rose-500/50"
+                          >
+                            <option value={7}>7 Days (1 Week)</option>
+                            <option value={14}>14 Days (2 Weeks)</option>
+                            <option value={30}>30 Days (1 Month)</option>
+                            <option value={90}>90 Days (3 Months)</option>
+                            <option value={180}>180 Days (6 Months)</option>
+                            <option value={365}>365 Days (1 Year)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold text-secondary uppercase tracking-wider flex items-center gap-1.5">
+                          <Heart className="w-4 h-4 text-rose-400" />
+                          Private Settlement Instructions (Demat, Accounts, Notes)
+                        </label>
+                        <p className="text-[10px] text-muted leading-tight">
+                          🔒 Stored securely. Visible and emailed to your beneficiary **only** when the switch triggers.
+                        </p>
+                        <textarea
+                          rows={6}
+                          placeholder="Fill DP IDs, account details, locker locations here..."
+                          value={willCustomMessage}
+                          onChange={(e) => setWillCustomMessage(e.target.value)}
+                          disabled={willProcessing}
+                          className="py-2.5 bg-black/40 text-xs w-full border border-white/5 rounded-lg px-3 font-mono focus:outline-none focus:border-rose-500/50 leading-relaxed"
+                        />
+                      </div>
+
+                      <div className="flex justify-end pt-2">
                         <button
                           type="submit"
-                          className="btn btn-primary bg-rose-500 hover:bg-rose-600 text-white border-rose-500 px-6 py-2.5 text-xs font-bold shrink-0"
+                          className="btn btn-primary bg-rose-500 hover:bg-rose-600 text-white border-rose-500 px-6 py-2.5 text-xs font-bold"
                           disabled={willProcessing}
                         >
-                          Initiate Switch
+                          {willProcessing ? 'Initiating...' : 'Initiate Switch'}
                         </button>
                       </div>
 
@@ -581,25 +754,43 @@ export const SharingSettings: React.FC<SharingSettingsProps> = ({
                   ) : (
                     /* Will Status Details */
                     <div className="p-4 rounded-xl border border-white/5 bg-white/[0.01] space-y-4">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="space-y-1">
-                          <span className="text-[10px] text-secondary uppercase tracking-wider block">Beneficiary User</span>
-                          <span className="font-semibold text-white text-sm flex items-center gap-1.5">
-                            <Mail className="w-4 h-4 text-secondary" />
-                            {will.beneficiaryEmail}
+                          <span className="text-[10px] text-secondary uppercase tracking-wider block">Beneficiaries</span>
+                          <span className="font-semibold text-white text-xs flex items-center gap-1.5">
+                            <Mail className="w-3.5 h-3.5 text-secondary" />
+                            <span className="truncate max-w-[150px]" title={will.beneficiaryEmails && Array.isArray(will.beneficiaryEmails) ? will.beneficiaryEmails.join(', ') : will.beneficiaryEmail}>
+                              {will.beneficiaryEmails && Array.isArray(will.beneficiaryEmails) ? will.beneficiaryEmails.join(', ') : will.beneficiaryEmail}
+                            </span>
+                          </span>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-secondary uppercase tracking-wider block">Inactivity Period</span>
+                          <span className="font-semibold text-white text-xs flex items-center gap-1.5">
+                            <Calendar className="w-3.5 h-3.5 text-secondary" />
+                            {will.durationDays || 7} Days
                           </span>
                         </div>
                         <div className="space-y-1">
                           <span className="text-[10px] text-secondary uppercase tracking-wider block">Expiry Status</span>
-                          <span className="font-bold text-teal-400 text-sm flex items-center gap-1.5">
-                            <Calendar className="w-4 h-4 text-teal-400" />
+                          <span className="font-bold text-teal-400 text-xs flex items-center gap-1.5">
+                            <Calendar className="w-3.5 h-3.5 text-teal-400" />
                             {getRemainingTimeText()}
                           </span>
                         </div>
                       </div>
 
+                      {will.customMessage && (
+                        <div className="space-y-1.5 pt-2 border-t border-white/5">
+                          <span className="text-[10px] text-secondary uppercase tracking-wider block">Your Saved Settlement Instructions</span>
+                          <div className="bg-black/40 border border-white/5 p-3 rounded-lg max-h-[120px] overflow-y-auto">
+                            <pre className="text-[10px] text-secondary font-mono whitespace-pre-wrap leading-relaxed">{will.customMessage}</pre>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="text-xs text-secondary leading-relaxed bg-white/[0.01] p-3 rounded-lg border border-white/5">
-                        🛡️ **Auto-Postpone Active:** Your timer was automatically extended to 7 days when you opened this portfolio session today at **{will.lastSeenAt?.toDate()?.toLocaleTimeString()}**. 
+                        🛡️ **Auto-Postpone Active:** Your timer was automatically extended to {will.durationDays || 7} days when you opened this portfolio session today at **{will.lastSeenAt?.toDate()?.toLocaleTimeString()}**. 
                       </div>
 
                       <div className="flex justify-between items-center pt-2 border-t border-white/5">

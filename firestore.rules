@@ -137,28 +137,31 @@ service cloud.firestore {
       return isAuthenticated() && 
              exists(/databases/$(database)/documents/wills/$(portfolioId)) &&
              get(/databases/$(database)/documents/wills/$(portfolioId)).data.status == 'triggered' &&
-             request.auth.token.email.lower() == get(/databases/$(database)/documents/wills/$(portfolioId)).data.beneficiaryEmail.lower();
+             request.auth.token.email.lower() in get(/databases/$(database)/documents/wills/$(portfolioId)).data.beneficiaryEmails;
     }
 
     // Validate Will schema
     function isValidWill(data) {
       return data.keys().hasOnly([
         'portfolioId', 'portfolioName', 'ownerId', 'ownerEmail',
-        'beneficiaryEmail', 'status', 'initiatedAt', 'expiresAt',
-        'lastSeenAt', 'createdAt', 'updatedAt', 'triggeredAt'
+        'beneficiaryEmails', 'status', 'initiatedAt', 'expiresAt',
+        'lastSeenAt', 'createdAt', 'updatedAt', 'triggeredAt',
+        'durationDays', 'customMessage'
       ]) &&
       data.portfolioId is string &&
       data.portfolioName is string && data.portfolioName.size() > 0 && data.portfolioName.size() <= 100 &&
       data.ownerId is string && data.ownerId.size() > 0 &&
       data.ownerEmail is string && isValidEmail(data.ownerEmail) &&
-      isValidEmail(data.beneficiaryEmail) &&
+      data.beneficiaryEmails is list && data.beneficiaryEmails.size() > 0 && data.beneficiaryEmails.size() <= 5 &&
       data.status in ['pending', 'triggered'] &&
       data.initiatedAt is timestamp &&
       data.expiresAt is timestamp &&
       data.lastSeenAt is timestamp &&
       data.createdAt is timestamp &&
       data.updatedAt is timestamp &&
-      (!('triggeredAt' in data) || data.triggeredAt is timestamp);
+      (!('triggeredAt' in data) || data.triggeredAt is timestamp) &&
+      data.durationDays is number && data.durationDays > 0 && data.durationDays <= 365 &&
+      (!('customMessage' in data) || (data.customMessage is string && data.customMessage.size() <= 5000));
     }
 
     // Validate Goal schema
@@ -186,7 +189,7 @@ service cloud.firestore {
     // ===============================================================
 
     match /secrets/gemini {
-      allow read: if request.auth != null && request.auth.token.email == "admin@example.com";
+      allow read: if request.auth != null && (request.auth.token.email == "admin@example.com" || request.auth.token.email == "demo@melavo.com");
       allow write: if request.auth != null && request.auth.token.email == "admin@example.com";
     }
 
@@ -240,7 +243,7 @@ service cloud.firestore {
       // Allow read: owner or beneficiary
       allow read: if isAuthenticated() && (
         request.auth.uid == resource.data.ownerId ||
-        request.auth.token.email.lower() == resource.data.beneficiaryEmail.lower()
+        request.auth.token.email.lower() in resource.data.beneficiaryEmails
       );
 
       // Allow create: only portfolio owner
@@ -260,11 +263,11 @@ service cloud.firestore {
           isValidWill(request.resource.data)
         ) ||
         (
-          request.auth.token.email.lower() == resource.data.beneficiaryEmail.lower() &&
+          request.auth.token.email.lower() in resource.data.beneficiaryEmails &&
           resource.data.status == 'pending' &&
           request.resource.data.status == 'triggered' &&
           request.time > resource.data.expiresAt &&
-          request.resource.data.beneficiaryEmail == resource.data.beneficiaryEmail &&
+          request.resource.data.beneficiaryEmails == resource.data.beneficiaryEmails &&
           request.resource.data.ownerId == resource.data.ownerId &&
           request.resource.data.portfolioId == resource.data.portfolioId &&
           isValidWill(request.resource.data)
