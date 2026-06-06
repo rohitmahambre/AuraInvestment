@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { useAuth } from '../context/AuthContext';
 
 interface MutualFundOverlapProps {
   investments: Investment[];
@@ -44,6 +45,9 @@ export const MutualFundOverlap: React.FC<MutualFundOverlapProps> = ({
   rates,
   displayCurrency
 }) => {
+  const { user } = useAuth();
+  const isOwner = user?.email?.toLowerCase() === 'admin@example.com';
+
   // Filter investments of type mutual_fund that have schemeCode
   const mutualFunds = investments.filter(
     (inv) => inv.type === 'mutual_fund' && inv.schemeCode
@@ -108,6 +112,9 @@ export const MutualFundOverlap: React.FC<MutualFundOverlapProps> = ({
   // 1. Resolve API Key on mount
   useEffect(() => {
     const loadKey = async () => {
+      if (!isOwner) {
+        return;
+      }
       const envKey = (import.meta.env.VITE_GEMINI_API_KEY as string) || '';
       if (envKey) {
         setApiKey(envKey);
@@ -134,7 +141,7 @@ export const MutualFundOverlap: React.FC<MutualFundOverlapProps> = ({
       }
     };
     loadKey();
-  }, []);
+  }, [isOwner]);
 
   // 2. Fetch holdings for all unique funds in parallel on load/activeSubTab changes
   useEffect(() => {

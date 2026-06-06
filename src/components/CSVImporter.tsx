@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import type { InvestmentType, InvestmentRegion, InvestmentCurrency } from '../types';
 import { collection, writeBatch, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { useAuth } from '../context/AuthContext';
 import { FileSpreadsheet, Upload, CheckCircle2, AlertTriangle, HelpCircle, Sparkles, Trash2, RotateCw } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -15,6 +16,9 @@ interface ParsedRow {
 }
 
 export const CSVImporter: React.FC<CSVImporterProps> = ({ portfolioId, onImportSuccess }) => {
+  const { user } = useAuth();
+  const isOwner = user?.email?.toLowerCase() === 'admin@example.com';
+
   const [importMode, setImportMode] = useState<'csv' | 'ai'>('csv');
   
   // CSV Mode States
@@ -73,6 +77,8 @@ export const CSVImporter: React.FC<CSVImporterProps> = ({ portfolioId, onImportS
 
   // Helper to load Gemini API Key
   const loadGeminiKey = async () => {
+    if (!isOwner) return '';
+
     // 1. Env Key
     const envKey = (import.meta.env.VITE_GEMINI_API_KEY as string) || '';
     if (envKey) return envKey;

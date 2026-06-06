@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { useAuth } from '../context/AuthContext';
 
 interface AuraAdvisorProps {
   investments: Investment[];
@@ -23,6 +24,9 @@ export const AuraAdvisor: React.FC<AuraAdvisorProps> = ({
   rates,
   displayCurrency
 }) => {
+  const { user } = useAuth();
+  const isOwner = user?.email?.toLowerCase() === 'admin@example.com';
+  
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'chat' | 'optimize'>('chat');
   
@@ -46,6 +50,9 @@ export const AuraAdvisor: React.FC<AuraAdvisorProps> = ({
   // Load API Key from environment, Firestore, or local storage on mount
   useEffect(() => {
     const loadKey = async () => {
+      if (!isOwner) {
+        return;
+      }
       // 1. Try local dev environment variable first
       const envKey = (import.meta.env.VITE_GEMINI_API_KEY as string) || '';
       if (envKey) {
@@ -87,7 +94,7 @@ export const AuraAdvisor: React.FC<AuraAdvisorProps> = ({
     };
 
     loadKey();
-  }, []);
+  }, [isOwner]);
 
   // Scroll to bottom of chat
   useEffect(() => {
@@ -350,13 +357,15 @@ ${portfolioContext}`;
             </div>
             
             <div className="flex items-center gap-1.5">
-              <button 
-                onClick={() => setShowKeyInput(!showKeyInput)}
-                className={`p-1.5 rounded-lg hover:bg-white/5 transition-colors ${apiKey ? 'text-teal-400' : 'text-yellow-500 animate-pulse'}`}
-                title="API Key Settings"
-              >
-                <Key className="w-4 h-4" />
-              </button>
+              {isOwner && (
+                <button 
+                  onClick={() => setShowKeyInput(!showKeyInput)}
+                  className={`p-1.5 rounded-lg hover:bg-white/5 transition-colors ${apiKey ? 'text-teal-400' : 'text-yellow-500 animate-pulse'}`}
+                  title="API Key Settings"
+                >
+                  <Key className="w-4 h-4" />
+                </button>
+              )}
               <button 
                 onClick={() => setIsOpen(false)}
                 className="p-1.5 rounded-lg hover:bg-white/5 text-secondary hover:text-white transition-colors"

@@ -74,6 +74,10 @@ export const GoalPlanner: React.FC<GoalPlannerProps> = ({
 
   useEffect(() => {
     const loadKey = async () => {
+      const isOwner = user?.email?.toLowerCase() === 'admin@example.com';
+      if (!isOwner) {
+        return;
+      }
       const envKey = (import.meta.env.VITE_GEMINI_API_KEY as string) || '';
       if (envKey) {
         setApiKey(envKey);
@@ -90,7 +94,7 @@ export const GoalPlanner: React.FC<GoalPlannerProps> = ({
       }
     };
     loadKey();
-  }, []);
+  }, [user]);
 
   // Fetch goals for active portfolio
   useEffect(() => {
