@@ -50,22 +50,27 @@ export const AuraAdvisor: React.FC<AuraAdvisorProps> = ({
   // Load API Key from environment, Firestore, or local storage on mount
   useEffect(() => {
     const loadKey = async () => {
-      if (!isOwner) {
+      const email = user?.email?.toLowerCase();
+      if (email !== 'admin@example.com' && email !== 'demo@melavo.com') {
         return;
       }
-      // 1. Try local dev environment variable first
-      const envKey = (import.meta.env.VITE_GEMINI_API_KEY as string) || '';
-      if (envKey) {
-        setApiKey(envKey);
-        setTempKey(envKey);
-        setKeySource('env');
-        setShowKeyInput(false);
-        return;
+
+      // 1. Try local dev environment variable first (owner only)
+      if (email === 'admin@example.com') {
+        const envKey = (import.meta.env.VITE_GEMINI_API_KEY as string) || '';
+        if (envKey) {
+          setApiKey(envKey);
+          setTempKey(envKey);
+          setKeySource('env');
+          setShowKeyInput(false);
+          return;
+        }
       }
 
       // 2. Try fetching securely from Firestore secrets document (for deployed app)
       try {
-        const secretDocRef = doc(db, 'secrets', 'gemini');
+        const docName = email === 'admin@example.com' ? 'gemini' : 'demo_gemini';
+        const secretDocRef = doc(db, 'secrets', docName);
         const secretSnap = await getDoc(secretDocRef);
         if (secretSnap.exists()) {
           const keyData = secretSnap.data().key;
@@ -78,23 +83,25 @@ export const AuraAdvisor: React.FC<AuraAdvisorProps> = ({
           }
         }
       } catch (err) {
-        console.warn("Could not read secure key from Firestore. Falling back to local storage.", err);
+        console.warn("Could not read secure key from Firestore.", err);
       }
 
-      // 3. Fall back to local storage
-      const savedKey = localStorage.getItem('gemini_api_key') || '';
-      if (savedKey) {
-        setApiKey(savedKey);
-        setTempKey(savedKey);
-        setKeySource('local');
-        setShowKeyInput(false);
-      } else {
-        setShowKeyInput(true);
+      // 3. Fall back to local storage (owner only)
+      if (email === 'admin@example.com') {
+        const savedKey = localStorage.getItem('gemini_api_key') || '';
+        if (savedKey) {
+          setApiKey(savedKey);
+          setTempKey(savedKey);
+          setKeySource('local');
+          setShowKeyInput(false);
+        } else {
+          setShowKeyInput(true);
+        }
       }
     };
 
     loadKey();
-  }, [isOwner]);
+  }, [user]);
 
   // Scroll to bottom of chat
   useEffect(() => {

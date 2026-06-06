@@ -46,7 +46,6 @@ export const MutualFundOverlap: React.FC<MutualFundOverlapProps> = ({
   displayCurrency
 }) => {
   const { user } = useAuth();
-  const isOwner = user?.email?.toLowerCase() === 'admin@example.com';
 
   // Filter investments of type mutual_fund that have schemeCode
   const mutualFunds = investments.filter(
@@ -112,17 +111,24 @@ export const MutualFundOverlap: React.FC<MutualFundOverlapProps> = ({
   // 1. Resolve API Key on mount
   useEffect(() => {
     const loadKey = async () => {
-      if (!isOwner) {
-        return;
-      }
-      const envKey = (import.meta.env.VITE_GEMINI_API_KEY as string) || '';
-      if (envKey) {
-        setApiKey(envKey);
+      const email = user?.email?.toLowerCase();
+      if (email !== 'admin@example.com' && email !== 'demo@melavo.com') {
         return;
       }
 
+      // 1. Try local dev environment variable first (owner only)
+      if (email === 'admin@example.com') {
+        const envKey = (import.meta.env.VITE_GEMINI_API_KEY as string) || '';
+        if (envKey) {
+          setApiKey(envKey);
+          return;
+        }
+      }
+
+      // 2. Try fetching securely from Firestore secrets document (for deployed app)
       try {
-        const secretDocRef = doc(db, 'secrets', 'gemini');
+        const docName = email === 'admin@example.com' ? 'gemini' : 'demo_gemini';
+        const secretDocRef = doc(db, 'secrets', docName);
         const secretSnap = await getDoc(secretDocRef);
         if (secretSnap.exists()) {
           const keyData = secretSnap.data().key;
@@ -132,16 +138,19 @@ export const MutualFundOverlap: React.FC<MutualFundOverlapProps> = ({
           }
         }
       } catch (err) {
-        console.warn("Could not read secure key from Firestore. Falling back to local storage.", err);
+        console.warn("Could not read secure key from Firestore.", err);
       }
 
-      const savedKey = localStorage.getItem('gemini_api_key') || '';
-      if (savedKey) {
-        setApiKey(savedKey);
+      // 3. Fall back to local storage (owner only)
+      if (email === 'admin@example.com') {
+        const savedKey = localStorage.getItem('gemini_api_key') || '';
+        if (savedKey) {
+          setApiKey(savedKey);
+        }
       }
     };
     loadKey();
-  }, [isOwner]);
+  }, [user]);
 
   // 2. Fetch holdings for all unique funds in parallel on load/activeSubTab changes
   useEffect(() => {

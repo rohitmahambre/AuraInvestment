@@ -189,6 +189,10 @@ service cloud.firestore {
     // ===============================================================
 
     match /secrets/gemini {
+      allow read, write: if request.auth != null && request.auth.token.email == "admin@example.com";
+    }
+
+    match /secrets/demo_gemini {
       allow read: if request.auth != null && (request.auth.token.email == "admin@example.com" || request.auth.token.email == "demo@melavo.com");
       allow write: if request.auth != null && request.auth.token.email == "admin@example.com";
     }

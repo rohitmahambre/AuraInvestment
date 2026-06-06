@@ -74,17 +74,24 @@ export const GoalPlanner: React.FC<GoalPlannerProps> = ({
 
   useEffect(() => {
     const loadKey = async () => {
-      const isOwner = user?.email?.toLowerCase() === 'admin@example.com';
-      if (!isOwner) {
+      const email = user?.email?.toLowerCase();
+      if (email !== 'admin@example.com' && email !== 'demo@melavo.com') {
         return;
       }
-      const envKey = (import.meta.env.VITE_GEMINI_API_KEY as string) || '';
-      if (envKey) {
-        setApiKey(envKey);
-        return;
+
+      // 1. Try local dev environment variable first (owner only)
+      if (email === 'admin@example.com') {
+        const envKey = (import.meta.env.VITE_GEMINI_API_KEY as string) || '';
+        if (envKey) {
+          setApiKey(envKey);
+          return;
+        }
       }
+
+      // 2. Try fetching securely from Firestore secrets document (for deployed app)
       try {
-        const secretDocRef = doc(db, 'secrets', 'gemini');
+        const docName = email === 'admin@example.com' ? 'gemini' : 'demo_gemini';
+        const secretDocRef = doc(db, 'secrets', docName);
         const secretSnap = await getDoc(secretDocRef);
         if (secretSnap.exists()) {
           setApiKey(secretSnap.data().key || '');

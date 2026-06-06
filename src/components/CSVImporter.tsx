@@ -17,7 +17,6 @@ interface ParsedRow {
 
 export const CSVImporter: React.FC<CSVImporterProps> = ({ portfolioId, onImportSuccess }) => {
   const { user } = useAuth();
-  const isOwner = user?.email?.toLowerCase() === 'admin@example.com';
 
   const [importMode, setImportMode] = useState<'csv' | 'ai'>('csv');
   
@@ -77,15 +76,21 @@ export const CSVImporter: React.FC<CSVImporterProps> = ({ portfolioId, onImportS
 
   // Helper to load Gemini API Key
   const loadGeminiKey = async () => {
-    if (!isOwner) return '';
+    const email = user?.email?.toLowerCase();
+    if (email !== 'admin@example.com' && email !== 'demo@melavo.com') {
+      return '';
+    }
 
-    // 1. Env Key
-    const envKey = (import.meta.env.VITE_GEMINI_API_KEY as string) || '';
-    if (envKey) return envKey;
+    // 1. Env Key (owner only)
+    if (email === 'admin@example.com') {
+      const envKey = (import.meta.env.VITE_GEMINI_API_KEY as string) || '';
+      if (envKey) return envKey;
+    }
 
     // 2. Firestore Secrets Secure Collection
     try {
-      const docRef = doc(db, 'secrets', 'gemini');
+      const docName = email === 'admin@example.com' ? 'gemini' : 'demo_gemini';
+      const docRef = doc(db, 'secrets', docName);
       const docSnap = await getDoc(docRef);
       if (docSnap.exists() && docSnap.data().key) {
         return docSnap.data().key;
@@ -94,8 +99,11 @@ export const CSVImporter: React.FC<CSVImporterProps> = ({ portfolioId, onImportS
       console.warn("Could not read Gemini key from Firestore secure store.");
     }
 
-    // 3. LocalStorage
-    return localStorage.getItem('gemini_api_key') || '';
+    // 3. LocalStorage (owner only)
+    if (email === 'admin@example.com') {
+      return localStorage.getItem('gemini_api_key') || '';
+    }
+    return '';
   };
 
   // Standard CSV row splitting logic
