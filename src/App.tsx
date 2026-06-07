@@ -8,6 +8,7 @@ import { SharingSettings } from './components/SharingSettings';
 import { AuraAdvisor } from './components/AuraAdvisor';
 import { MutualFundOverlap } from './components/MutualFundOverlap';
 import { GoalPlanner } from './components/GoalPlanner';
+import { TaxResidency } from './components/TaxResidency';
 import type { Portfolio, Investment, ExchangeRates, InvestmentCurrency } from './types';
 import { fetchExchangeRates } from './utils/exchangeRates';
 import { 
@@ -25,12 +26,12 @@ import {
   TrendingUp, LayoutDashboard, LineChart, 
   FileSpreadsheet, Users, LogOut, ChevronRight,
   User, RefreshCw, AlertCircle, Plus, Folder,
-  Layers, Target
+  Layers, Target, Calendar
 } from 'lucide-react';
 
 function DashboardShell() {
   const { user, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState<'overview' | 'investments' | 'import' | 'sharing' | 'overlap' | 'goals'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'investments' | 'import' | 'sharing' | 'overlap' | 'goals' | 'tax'>('overview');
   
   // Portfolios
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
@@ -523,6 +524,24 @@ function DashboardShell() {
 
             <button
               onClick={() => {
+                console.log("Tab clicked: tax");
+                setActiveTab('tax');
+              }}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                activeTab === 'tax'
+                  ? 'bg-teal-500/10 text-teal-400 border-l-2 border-teal-500'
+                  : 'text-secondary hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <span className="flex items-center gap-2.5">
+                <Calendar className="w-4 h-4" />
+                Tax Tracker
+              </span>
+              <ChevronRight className="w-3.5 h-3.5 opacity-60" />
+            </button>
+
+            <button
+              onClick={() => {
                 console.log("Tab clicked: import");
                 setActiveTab('import');
               }}
@@ -693,6 +712,26 @@ function DashboardShell() {
                 <h3 className="text-xl font-bold mb-2">No Active Portfolio</h3>
                 <p className="text-secondary max-w-sm">
                   Please select or create a portfolio from the sidebar workspace selector to configure goals.
+                </p>
+              </div>
+            )
+          )}
+
+          {activeTab === 'tax' && (
+            activePortfolio ? (
+              <TaxResidency
+                portfolioId={activePortfolio.id}
+                investments={investments}
+                rates={rates}
+                displayCurrency={displayCurrency}
+                canWrite={canWrite}
+              />
+            ) : (
+              <div className="glass-panel p-12 text-center flex flex-col items-center justify-center">
+                <AlertCircle className="w-16 h-16 text-yellow-500/60 mb-4" />
+                <h3 className="text-xl font-bold mb-2">No Active Portfolio</h3>
+                <p className="text-secondary max-w-sm">
+                  Please select or create a portfolio from the sidebar workspace selector to track tax residency.
                 </p>
               </div>
             )

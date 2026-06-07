@@ -127,6 +127,21 @@ service cloud.firestore {
       data.updatedAt is timestamp;
     }
 
+    // Validate Trip schema
+    function isValidTrip(data) {
+      return data.keys().hasOnly(['id', 'portfolioId', 'destinationRegion', 'purpose', 'startDate', 'endDate', 'notes', 'createdAt', 'updatedAt']) &&
+             data.id is string &&
+             data.portfolioId is string &&
+             data.destinationRegion in ['India', 'Europe', 'Other'] &&
+             (!('purpose' in data) || (data.purpose is string && data.purpose.size() <= 200)) &&
+             data.startDate is string && data.startDate.matches("^\\d{4}-\\d{2}-\\d{2}$") &&
+             data.endDate is string && data.endDate.matches("^\\d{4}-\\d{2}-\\d{2}$") &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000)) &&
+             data.createdAt is timestamp &&
+             data.updatedAt is timestamp;
+    }
+
+
     // Helper to load parent portfolio document
     function getPortfolio(portfolioId) {
       return get(/databases/$(database)/documents/portfolios/$(portfolioId)).data;
@@ -324,6 +339,24 @@ service cloud.firestore {
 
         // Delete: anyone with write access to the portfolio can delete
         allow delete: if canWritePortfolio(getPortfolio(portfolioId));
+      }
+
+      // Subcollection trips
+      match /trips/{tripId} {
+        allow read: if canReadPortfolio(getPortfolio(portfolioId)) || isBeneficiaryOfTriggeredWill(portfolioId);
+        allow create: if canWritePortfolio(getPortfolio(portfolioId)) && 
+                      isValidTrip(request.resource.data) &&
+                      request.resource.data.portfolioId == portfolioId;
+        allow update: if canWritePortfolio(getPortfolio(portfolioId)) &&
+                      isValidTrip(request.resource.data) &&
+                      request.resource.data.portfolioId == resource.data.portfolioId;
+        allow delete: if canWritePortfolio(getPortfolio(portfolioId));
+      }
+
+      // Subcollection taxConfig
+      match /taxConfig/{configId} {
+        allow read: if canReadPortfolio(getPortfolio(portfolioId)) || isBeneficiaryOfTriggeredWill(portfolioId);
+        allow write: if canWritePortfolio(getPortfolio(portfolioId));
       }
     }
   }

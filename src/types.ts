@@ -47,3 +47,22 @@ export interface ExchangeRates {
   USD: number;
   date: string;
 }
+
+export interface Trip {
+  id: string;
+  portfolioId: string;
+  destinationRegion: 'India' | 'Europe' | 'Other';
+  purpose?: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  notes?: string;
+  createdAt: any;
+  updatedAt: any;
+}
+
+export interface TaxConfig {
+  isIndianCitizen: boolean;
+  hasIndianIncomeOver15L: boolean;
+  preceding4YearsDays: number;
+}
+
