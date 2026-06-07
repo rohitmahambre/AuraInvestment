@@ -92,7 +92,7 @@ In client-side serverless projects, hardcoding API keys in build-time configurat
 1. **Environment Variable:** The app checks `import.meta.env.VITE_GEMINI_API_KEY`.
 2. **Firestore Secret Store:**
    * If no local environment key is set, the app checks Firestore for a secure key document based on the authenticated user's email.
-   * If logged in as the administrator (`admin@example.com`), the app attempts to read the key from the Firestore collection `/secrets/gemini`.
+   * If logged in as the administrator (default: `admin@example.com`), the app attempts to read the key from the Firestore collection `/secrets/gemini`.
    * If logged in as the demo user (`demo@melavo.com`), the app reads a low-rate-limit key from `/secrets/demo_gemini`.
 3. **Local Storage:**
    * If none of the above are available, the user is prompted to input their own Gemini API key inside the settings panel. This key is saved locally in the browser's `localStorage` (`gemini_api_key`) and is never sent to any external server other than Google's Gemini API endpoints.
@@ -100,6 +100,13 @@ In client-side serverless projects, hardcoding API keys in build-time configurat
 > [!IMPORTANT]
 > **Firestore Security Rules Protection:**
 > The `/secrets` collection is locked down at the database level using `firestore.rules`. Even if someone compromises the web page, Firebase rejects read/write requests from any user who is not authenticated as the explicit administrator.
+
+### 4. Customizing the Administrator Email 👤
+By default, the application hardcodes `admin@example.com` as the administrator, which grants exclusive authority to read and write database-stored Gemini API keys. To customize this for your own setup:
+1. **Search and Replace:** Search the codebase for `admin@example.com` and replace it with your administrator email.
+2. **Update Security Rules:** Open [rules](file:///Users/rmahambre/InvestmentTracker/firestore.rules), locate matches under `/secrets/gemini` and `/secrets/demo_gemini` (lines 191-198), and change the email address values.
+3. **Redeploy Rules:** Run `firebase deploy --only firestore:rules` to publish the new permissions.
+
 
 ---
 
@@ -134,7 +141,7 @@ In the [Firebase Console](https://console.firebase.google.com/):
 
 ### 3. Save Production Secrets
 To configure the AI advisor for users in production without redeploying the app:
-1. Log in to the deployed application as the administrator (`admin@example.com`).
+1. Log in to the deployed application as your configured administrator email.
 2. Open the AI advisor floating Sparks bubble (bottom right/left).
 3. Under settings, input your Google Gemini API Key and select **"Save to Cloud Database"**.
 4. This action writes the key to `/secrets/gemini` in Firestore, making it instantly available for your administrator session.
