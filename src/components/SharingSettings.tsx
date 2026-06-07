@@ -216,7 +216,7 @@ Other Assets & Instructions:
                 subject: `Aura Investment: Inherited Portfolio Access Unlocked`,
                 html: `<h3>Aura Investment Tracker</h3>
                        <p>You have received inheritance access to the portfolio <strong>${willData.portfolioName}</strong> via a Dead Man's Switch set up by <strong>${willData.ownerEmail}</strong>.</p>
-                       <p>Log in to your account at <a href="https://melavo-514b7.web.app">Aura Investment Tracker</a> to view details.</p>
+                       <p>Log in to your account at <a href="${window.location.origin}">Aura Investment Tracker</a> to view details.</p>
                        ${customMessageHtml}`
               }
             });
