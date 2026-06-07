@@ -17,7 +17,26 @@ import {
   CheckCircle, Info, Sparkles, UserCheck, Plane, 
   Clock, Landmark, HelpCircle, X, RefreshCw
 } from 'lucide-react';
+import { PieChart, Pie, Cell, Tooltip } from 'recharts';
 import type { Trip, TaxConfig, Investment, ExchangeRates } from '../types';
+
+// Format YYYY-MM-DD to DD/MM/YYYY
+const formatDateDMY = (dateStr: string) => {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
+};
+
+// Calculate inclusive duration of trip in days
+const getTripDuration = (startStr: string, endStr: string) => {
+  if (!startStr || !endStr) return 0;
+  const start = new Date(`${startStr}T00:00:00`);
+  const end = new Date(`${endStr}T23:59:59`);
+  const diffTime = Math.abs(end.getTime() - start.getTime());
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+};
+
 
 interface TaxResidencyProps {
   portfolioId: string;
@@ -427,75 +446,39 @@ Ensure the tone is highly professional, clean, structured in Markdown. Add a war
             </p>
           </div>
 
-          <div className="flex justify-around items-center gap-4 my-2">
-            {/* India Circle */}
-            <div className="flex flex-col items-center gap-2 text-center">
-              <div className="relative w-28 h-28 flex items-center justify-center">
-                <svg className="absolute w-full h-full transform -rotate-90">
-                  <circle
-                    cx="56"
-                    cy="56"
-                    r="48"
-                    stroke="rgba(255,255,255,0.03)"
-                    strokeWidth="8"
-                    fill="transparent"
-                  />
-                  <circle
-                    cx="56"
-                    cy="56"
-                    r="48"
-                    stroke="url(#india-progress-grad)"
-                    strokeWidth="8"
-                    fill="transparent"
-                    strokeDasharray={301.6}
-                    strokeDashoffset={301.6 - (301.6 * Math.min(daysInIndia, totalDaysInFY)) / totalDaysInFY}
-                    className="transition-all duration-500"
-                  />
-                  <defs>
-                    <linearGradient id="india-progress-grad" x1="0" y1="0" x2="1" y2="1">
-                      <stop offset="0%" stopColor="#f59e0b" />
-                      <stop offset="100%" stopColor="#10b981" />
-                    </linearGradient>
-                  </defs>
-                </svg>
-                <div className="flex flex-col items-center">
-                  <span className="text-2xl font-bold text-white">{daysInIndia}</span>
-                  <span className="text-[10px] text-secondary font-semibold uppercase">Days</span>
-                </div>
-              </div>
-              <span className="text-xs font-bold text-teal-400">In India</span>
-            </div>
-
-            {/* Outside India Circle */}
-            <div className="flex flex-col items-center gap-2 text-center">
-              <div className="relative w-28 h-28 flex items-center justify-center">
-                <svg className="absolute w-full h-full transform -rotate-90">
-                  <circle
-                    cx="56"
-                    cy="56"
-                    r="48"
-                    stroke="rgba(255,255,255,0.03)"
-                    strokeWidth="8"
-                    fill="transparent"
-                  />
-                  <circle
-                    cx="56"
-                    cy="56"
-                    r="48"
-                    stroke="#6366f1"
-                    strokeWidth="8"
-                    fill="transparent"
-                    strokeDasharray={301.6}
-                    strokeDashoffset={301.6 - (301.6 * Math.max(daysOutsideIndia, 0)) / totalDaysInFY}
-                    className="transition-all duration-500"
-                  />
-                </svg>
-                <div className="flex flex-col items-center">
-                  <span className="text-2xl font-bold text-white">{daysOutsideIndia}</span>
-                  <span className="text-[10px] text-secondary font-semibold uppercase">Days</span>
-                </div>
-              </div>
-              <span className="text-xs font-bold text-indigo-400">Outside India</span>
+          <div style={{ height: '180px', width: '100%', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '8px 0' }}>
+            <PieChart width={220} height={180}>
+              <Pie
+                data={[
+                  { name: 'In India', value: daysInIndia },
+                  { name: 'Outside India', value: daysOutsideIndia }
+                ]}
+                cx="50%"
+                cy="50%"
+                innerRadius={55}
+                outerRadius={75}
+                paddingAngle={3}
+                dataKey="value"
+              >
+                <Cell fill="#f59e0b" />
+                <Cell fill="#6366f1" />
+              </Pie>
+              <Tooltip
+                contentStyle={{
+                  background: 'rgba(20, 20, 25, 0.95)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: '12px',
+                  fontSize: '11px',
+                  color: '#fff'
+                }}
+                formatter={(value: any) => [`${value} Days`, '']}
+              />
+            </PieChart>
+            
+            {/* Center Text displaying days in India */}
+            <div style={{ position: 'absolute', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#fff' }}>{daysInIndia}</span>
+              <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Days in India</span>
             </div>
           </div>
 
@@ -631,10 +614,10 @@ Ensure the tone is highly professional, clean, structured in Markdown. Add a war
           <div>
             <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4 flex items-center gap-2">
               <Plane className="w-4 h-4 text-teal-400" />
-              Logged Trips to India (FY {selectedFY})
+              All Logged Trips to India
             </h3>
             <p className="text-xs text-secondary mb-4">
-              List of trips overlapping with this financial year.
+              Chronological list of all logged travel logs to India.
             </p>
           </div>
 
@@ -652,8 +635,9 @@ Ensure the tone is highly professional, clean, structured in Markdown. Add a war
               <table className="w-full border-collapse text-left">
                 <thead>
                   <tr className="border-b border-light text-[10px] text-secondary font-bold uppercase tracking-wider">
-                    <th className="py-2.5 px-2">Arrival</th>
-                    <th className="py-2.5 px-2">Departure</th>
+                    <th className="py-2.5 px-2">Departure Date</th>
+                    <th className="py-2.5 px-2">Arrival Date</th>
+                    <th className="py-2.5 px-2">No. of Days</th>
                     <th className="py-2.5 px-2">Purpose</th>
                     <th className="py-2.5 px-2 text-right">Actions</th>
                   </tr>
@@ -662,8 +646,9 @@ Ensure the tone is highly professional, clean, structured in Markdown. Add a war
                   {trips.map((trip) => {
                     return (
                       <tr key={trip.id} className="hover:bg-white/2 transition-colors">
-                        <td className="py-2.5 px-2 font-mono text-white">{trip.startDate}</td>
-                        <td className="py-2.5 px-2 font-mono text-white">{trip.endDate}</td>
+                        <td className="py-2.5 px-2 font-mono text-white">{formatDateDMY(trip.startDate)}</td>
+                        <td className="py-2.5 px-2 font-mono text-white">{formatDateDMY(trip.endDate)}</td>
+                        <td className="py-2.5 px-2 font-mono text-white">{getTripDuration(trip.startDate, trip.endDate)}</td>
                         <td className="py-2.5 px-2">
                           <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-teal-500/10 text-teal-400 border border-teal-500/10">
                             {trip.purpose}
