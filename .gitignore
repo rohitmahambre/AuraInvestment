@@ -29,3 +29,13 @@ dist-ssr
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Firebase cache and local project CLI directories
+.firebase/
+
+# Local testing and scratchpad
+scratch/
+accounts.json
+ALlInvest.pdf
+READ.md
+
