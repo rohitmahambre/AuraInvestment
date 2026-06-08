@@ -215,6 +215,20 @@ export const InvestmentList: React.FC<InvestmentListProps> = ({
   const [ticker, setTicker] = useState('');
   const [schemeCode, setSchemeCode] = useState('');
   
+  // SIP Specific fields
+  const [isSipActive, setIsSipActive] = useState(false);
+  const [sipAmount, setSipAmount] = useState('');
+  const [sipFrequency, setSipFrequency] = useState<'weekly' | 'monthly' | 'quarterly'>('monthly');
+  const [sipDay, setSipDay] = useState('');
+  
+  // Insurance Specific fields
+  const [policyType, setPolicyType] = useState<'term' | 'health' | 'life' | 'motor' | 'other'>('term');
+  const [sumAssured, setSumAssured] = useState('');
+  const [premiumAmount, setPremiumAmount] = useState('');
+  const [premiumFrequency, setPremiumFrequency] = useState<'monthly' | 'quarterly' | 'half-yearly' | 'yearly'>('yearly');
+  const [premiumDueDate, setPremiumDueDate] = useState('');
+  const [policyNumber, setPolicyNumber] = useState('');
+  
   // FD Specific fields
   const [interestRate, setInterestRate] = useState('');
   const [interestType, setInterestType] = useState<'simple' | 'compound'>('compound');
@@ -247,6 +261,16 @@ export const InvestmentList: React.FC<InvestmentListProps> = ({
     setCompoundingFrequency('quarterly');
     setStartDate('');
     setMaturityDate('');
+    setIsSipActive(false);
+    setSipAmount('');
+    setSipFrequency('monthly');
+    setSipDay('');
+    setPolicyType('term');
+    setSumAssured('');
+    setPremiumAmount('');
+    setPremiumFrequency('yearly');
+    setPremiumDueDate('');
+    setPolicyNumber('');
     setFormError('');
     setIsModalOpen(true);
   };
@@ -271,6 +295,16 @@ export const InvestmentList: React.FC<InvestmentListProps> = ({
     setCompoundingFrequency(inv.compoundingFrequency || 'quarterly');
     setStartDate(inv.startDate || '');
     setMaturityDate(inv.maturityDate || '');
+    setIsSipActive(inv.isSipActive || false);
+    setSipAmount(inv.sipAmount ? inv.sipAmount.toString() : '');
+    setSipFrequency(inv.sipFrequency || 'monthly');
+    setSipDay(inv.sipDay ? inv.sipDay.toString() : '');
+    setPolicyType(inv.policyType || 'term');
+    setSumAssured(inv.sumAssured ? inv.sumAssured.toString() : '');
+    setPremiumAmount(inv.premiumAmount ? inv.premiumAmount.toString() : '');
+    setPremiumFrequency(inv.premiumFrequency || 'yearly');
+    setPremiumDueDate(inv.premiumDueDate || '');
+    setPolicyNumber(inv.policyNumber || '');
     setFormError('');
     setIsModalOpen(true);
   };
@@ -316,22 +350,66 @@ export const InvestmentList: React.FC<InvestmentListProps> = ({
     e.preventDefault();
     setFormError('');
 
-    if (!name || !amountInvested || !institution) {
-      setFormError('Name, Invested Amount, and Institution are required');
-      return;
+    if (type === 'insurance') {
+      if (!name || !institution || !premiumAmount || !premiumDueDate) {
+        setFormError('Name, Institution, Premium Amount, and Premium Due Date are required');
+        return;
+      }
+    } else {
+      if (!name || !amountInvested || !institution) {
+        setFormError('Name, Invested Amount, and Institution are required');
+        return;
+      }
     }
 
-    const p = parseFloat(amountInvested);
-    let c = parseFloat(currentValue || amountInvested);
+    let p = 0;
+    let c = 0;
 
-    if (isNaN(p) || p < 0) {
-      setFormError('Invested Amount must be a valid positive number');
-      return;
-    }
+    if (type === 'insurance') {
+      p = parseFloat(amountInvested || '0');
+      if (isNaN(p) || p < 0) p = 0;
 
-    if (isNaN(c) || c < 0) {
-      setFormError('Current Value must be a valid positive number');
-      return;
+      if (policyType === 'life') {
+        c = parseFloat(currentValue || '0');
+        if (isNaN(c) || c < 0) {
+          setFormError('Current Value (Surrender Value) must be a valid positive number');
+          return;
+        }
+      } else {
+        c = 0; // Term, Health, Motor policies have no asset currentValue
+      }
+
+      const pAmt = parseFloat(premiumAmount);
+      if (isNaN(pAmt) || pAmt <= 0) {
+        setFormError('Premium Amount must be a positive number');
+        return;
+      }
+    } else {
+      p = parseFloat(amountInvested);
+      c = parseFloat(currentValue || amountInvested);
+
+      if (isNaN(p) || p < 0) {
+        setFormError('Invested Amount must be a valid positive number');
+        return;
+      }
+
+      if (isNaN(c) || c < 0) {
+        setFormError('Current Value must be a valid positive number');
+        return;
+      }
+
+      if (isSipActive && (type === 'stock' || type === 'mutual_fund')) {
+        const sAmt = parseFloat(sipAmount);
+        const sDay = parseInt(sipDay);
+        if (isNaN(sAmt) || sAmt <= 0) {
+          setFormError('SIP Amount must be a positive number');
+          return;
+        }
+        if (isNaN(sDay) || sDay < 1 || sDay > 28) {
+          setFormError('SIP Execution Day must be a number between 1 and 28');
+          return;
+        }
+      }
     }
 
     setSaving(true);
@@ -353,12 +431,49 @@ export const InvestmentList: React.FC<InvestmentListProps> = ({
     if (ticker) investmentData.ticker = ticker.trim();
     if (schemeCode) investmentData.schemeCode = parseInt(schemeCode.trim());
 
+    if (type === 'stock' || type === 'mutual_fund') {
+      investmentData.isSipActive = isSipActive;
+      if (isSipActive) {
+        investmentData.sipAmount = parseFloat(sipAmount);
+        investmentData.sipFrequency = sipFrequency;
+        investmentData.sipDay = parseInt(sipDay);
+      } else {
+        investmentData.sipAmount = null;
+        investmentData.sipFrequency = null;
+        investmentData.sipDay = null;
+      }
+    } else {
+      investmentData.isSipActive = false;
+      investmentData.sipAmount = null;
+      investmentData.sipFrequency = null;
+      investmentData.sipDay = null;
+    }
+
+    if (type === 'insurance') {
+      investmentData.policyType = policyType;
+      investmentData.sumAssured = parseFloat(sumAssured) || 0;
+      investmentData.premiumAmount = parseFloat(premiumAmount);
+      investmentData.premiumFrequency = premiumFrequency;
+      investmentData.premiumDueDate = premiumDueDate;
+      if (policyNumber) investmentData.policyNumber = policyNumber.trim();
+    } else {
+      investmentData.policyType = null;
+      investmentData.sumAssured = null;
+      investmentData.premiumAmount = null;
+      investmentData.premiumFrequency = null;
+      investmentData.premiumDueDate = null;
+      investmentData.policyNumber = null;
+    }
+
     if (type === 'fd') {
       if (interestRate) investmentData.interestRate = parseFloat(interestRate);
       investmentData.interestType = interestType;
       investmentData.compoundingFrequency = compoundingFrequency;
-      if (startDate) investmentData.startDate = startDate;
       if (maturityDate) investmentData.maturityDate = maturityDate;
+    }
+
+    if (startDate) {
+      investmentData.startDate = startDate;
     }
 
     try {
@@ -508,7 +623,8 @@ export const InvestmentList: React.FC<InvestmentListProps> = ({
             { value: 'mutual_fund', label: 'Mutual Funds' },
             { value: 'fd', label: 'Fixed Deposits' },
             { value: 'savings', label: 'Savings Accounts' },
-            { value: 'other', label: 'Other Savings' }
+            { value: 'other', label: 'Other Savings' },
+            { value: 'insurance', label: 'Insurance Policies' }
           ]}
           selectedValues={typeFilters}
           onChange={setTypeFilters}
@@ -643,10 +759,32 @@ export const InvestmentList: React.FC<InvestmentListProps> = ({
                             {inv.maturityDate && <span>• Matures: {inv.maturityDate}</span>}
                           </div>
                         )}
+                        {inv.isSipActive && inv.sipAmount && (
+                          <div className="text-[11px] text-teal-300 font-mono mt-1 flex items-center gap-1 bg-teal-500/10 border border-teal-500/20 px-2 py-0.5 rounded w-fit uppercase tracking-wider font-bold">
+                            <span className="animate-pulse">🔄</span>
+                            <span>SIP: {formatCurrency(inv.sipAmount, inv.currency)} / {inv.sipFrequency} (Day {inv.sipDay})</span>
+                          </div>
+                        )}
+                        {inv.type === 'insurance' && inv.premiumAmount && (
+                          <div className="text-[11px] text-indigo-300 font-mono mt-1 flex flex-col gap-1 bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-1 rounded w-fit">
+                            <div className="flex items-center gap-1 font-bold uppercase tracking-wider text-xs">
+                              <span>🛡️</span>
+                              <span className="capitalize">{inv.policyType || 'insurance'} cover</span>
+                              {inv.policyNumber && <span className="opacity-60 font-medium font-sans lowercase">• #{inv.policyNumber}</span>}
+                            </div>
+                            <div className="text-[10px] text-secondary flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-semibold mt-0.5">
+                              <span>Sum Assured: {inv.sumAssured ? formatCurrency(inv.sumAssured, inv.currency) : 'N/A'}</span>
+                              <span>•</span>
+                              <span>Premium: {formatCurrency(inv.premiumAmount, inv.currency)} ({inv.premiumFrequency})</span>
+                              <span>•</span>
+                              <span className="text-indigo-200">Due: {inv.premiumDueDate}</span>
+                            </div>
+                          </div>
+                        )}
                       </td>
                       <td className="p-4 capitalize">
                         <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-white/5 text-secondary border border-white/10">
-                          {inv.type === 'mutual_fund' ? 'Mutual Fund' : inv.type === 'fd' ? 'Fixed Deposit' : inv.type}
+                          {inv.type === 'mutual_fund' ? 'Mutual Fund' : inv.type === 'fd' ? 'Fixed Deposit' : inv.type === 'insurance' ? 'Insurance' : inv.type}
                         </span>
                       </td>
                       <td className="p-4">
@@ -774,6 +912,7 @@ export const InvestmentList: React.FC<InvestmentListProps> = ({
                     <option value="fd">Fixed Deposit (FD)</option>
                     <option value="savings">Savings Account</option>
                     <option value="other">Other Savings</option>
+                    <option value="insurance">Insurance Policy</option>
                   </select>
                 </div>
 
@@ -799,11 +938,11 @@ export const InvestmentList: React.FC<InvestmentListProps> = ({
 
                 {/* Amount Invested */}
                 <div>
-                  <label>Amount Invested (Capital) *</label>
+                  <label>{type === 'insurance' ? 'Total Premiums Paid to Date (optional)' : 'Amount Invested (Capital) *'}</label>
                   <input
                     type="number"
                     step="any"
-                    required
+                    required={type !== 'insurance'}
                     min="0"
                     placeholder="0.00"
                     value={amountInvested}
@@ -822,26 +961,40 @@ export const InvestmentList: React.FC<InvestmentListProps> = ({
                 </div>
 
                 {/* Current Value */}
-                <div>
-                  <label className="flex items-center justify-between">
-                    <span>Current Value *</span>
-                    {type === 'fd' && (
-                      <span className="text-[10px] text-teal-400 flex items-center gap-0.5">
-                        <Info className="w-3 h-3" /> Use Calculator Below
-                      </span>
-                    )}
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    required
-                    min="0"
-                    placeholder="0.00"
-                    className={isCalculatingFd ? 'border-teal-400 bg-teal-950/20' : ''}
-                    value={currentValue}
-                    onChange={(e) => setCurrentValue(e.target.value)}
-                  />
-                </div>
+                {(type !== 'insurance' || policyType === 'life') && (
+                  <div>
+                    <label className="flex items-center justify-between">
+                      <span>{type === 'insurance' ? 'Current Surrender Value (Net Worth) *' : 'Current Value *'}</span>
+                      {type === 'fd' && (
+                        <span className="text-[10px] text-teal-400 flex items-center gap-0.5">
+                          <Info className="w-3 h-3" /> Use Calculator Below
+                        </span>
+                      )}
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      required
+                      min="0"
+                      placeholder="0.00"
+                      className={isCalculatingFd ? 'border-teal-400 bg-teal-950/20' : ''}
+                      value={currentValue}
+                      onChange={(e) => setCurrentValue(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                {/* Purchase Date */}
+                {type !== 'fd' && type !== 'insurance' && (
+                  <div>
+                    <label>Purchase Date (optional, for Tax tracking)</label>
+                    <input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                    />
+                  </div>
+                )}
 
                 {/* Stocks/MF details */}
                 {(type === 'stock' || type === 'mutual_fund') && (
@@ -910,6 +1063,145 @@ export const InvestmentList: React.FC<InvestmentListProps> = ({
                         />
                       </div>
                     )}
+
+                    {/* Systematic Investment Plan (SIP) Panel */}
+                    <div className="col-span-1 md:col-span-2 p-4 rounded-xl border border-white/5 bg-white/[0.02] mt-2 space-y-4">
+                      <label className="flex items-start gap-3 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={isSipActive}
+                          onChange={(e) => setIsSipActive(e.target.checked)}
+                          className="w-4 h-4 mt-0.5 rounded border-white/20 bg-transparent text-teal-400 focus:ring-teal-400 focus:ring-offset-0 shrink-0"
+                        />
+                        <div>
+                          <span className="font-bold text-sm text-white">Active Systematic Investment Plan (SIP)</span>
+                          <p className="text-xs text-secondary mt-0.5">Configure recurring monthly, weekly, or quarterly investments for portfolio projections and upcoming payment forecasts.</p>
+                        </div>
+                      </label>
+
+                      {isSipActive && (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-white/5 animate-fade-in animate-duration-200">
+                          <div>
+                            <label className="text-[11px] uppercase tracking-wider font-semibold text-secondary">SIP Amount ({currency}) *</label>
+                            <input
+                              type="number"
+                              step="any"
+                              required
+                              min="1"
+                              placeholder="0.00"
+                              value={sipAmount}
+                              onChange={(e) => setSipAmount(e.target.value)}
+                              className="w-full mt-1 bg-black/40 border border-white/15 rounded-lg py-1.5 px-3 text-sm text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[11px] uppercase tracking-wider font-semibold text-secondary">SIP Frequency *</label>
+                            <select
+                              value={sipFrequency}
+                              onChange={(e) => setSipFrequency(e.target.value as any)}
+                              className="w-full mt-1 bg-black/40 border border-white/15 rounded-lg py-1.5 px-3 text-sm text-white"
+                            >
+                              <option value="weekly">Weekly</option>
+                              <option value="monthly">Monthly</option>
+                              <option value="quarterly">Quarterly</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[11px] uppercase tracking-wider font-semibold text-secondary">Execution Day (1-28) *</label>
+                            <input
+                              type="number"
+                              required
+                              min="1"
+                              max="28"
+                              placeholder="e.g. 10"
+                              value={sipDay}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value);
+                                if (!isNaN(val)) {
+                                  setSipDay(Math.min(28, Math.max(1, val)).toString());
+                                } else {
+                                  setSipDay(e.target.value);
+                                }
+                              }}
+                              className="w-full mt-1 bg-black/40 border border-white/15 rounded-lg py-1.5 px-3 text-sm text-white"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {type === 'insurance' && (
+                  <>
+                    {/* Policy Type */}
+                    <div>
+                      <label>Policy Category *</label>
+                      <select value={policyType} onChange={(e) => setPolicyType(e.target.value as any)}>
+                        <option value="term">Term Life Insurance</option>
+                        <option value="health">Health / Medical Insurance</option>
+                        <option value="life">Traditional Life Insurance (Surrender Value)</option>
+                        <option value="motor">Vehicle / Motor Insurance</option>
+                        <option value="other">Other Insurance Policy</option>
+                      </select>
+                    </div>
+
+                    {/* Policy Number */}
+                    <div>
+                      <label>Policy Number (optional)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. POL-1294819"
+                        value={policyNumber}
+                        onChange={(e) => setPolicyNumber(e.target.value)}
+                      />
+                    </div>
+
+                    {/* Sum Assured */}
+                    <div>
+                      <label>Sum Assured / Cover Limit ({currency})</label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="e.g. 10000000"
+                        value={sumAssured}
+                        onChange={(e) => setSumAssured(e.target.value)}
+                      />
+                    </div>
+
+                    {/* Premium Amount */}
+                    <div>
+                      <label>Premium Amount ({currency}) *</label>
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="0.00"
+                        value={premiumAmount}
+                        onChange={(e) => setPremiumAmount(e.target.value)}
+                      />
+                    </div>
+
+                    {/* Premium Frequency */}
+                    <div>
+                      <label>Premium Payment Frequency *</label>
+                      <select value={premiumFrequency} onChange={(e) => setPremiumFrequency(e.target.value as any)}>
+                        <option value="monthly">Monthly</option>
+                        <option value="quarterly">Quarterly</option>
+                        <option value="half-yearly">Half-Yearly</option>
+                        <option value="yearly">Yearly</option>
+                      </select>
+                    </div>
+
+                    {/* Premium Due Date */}
+                    <div>
+                      <label>Next Premium Due Date *</label>
+                      <input
+                        type="date"
+                        required
+                        value={premiumDueDate}
+                        onChange={(e) => setPremiumDueDate(e.target.value)}
+                      />
+                    </div>
                   </>
                 )}
               </div>

@@ -1021,5 +1021,76 @@ tr {
   animation: aura-float-up 5s ease-in-out infinite;
 }
 
+/* Print Media styles for A4 Report */
+@media print {
+  html, body {
+    background: #ffffff !important;
+    color: #111111 !important;
+    font-size: 11pt !important;
+  }
+  
+  header, 
+  aside, 
+  button, 
+  .btn, 
+  .no-print, 
+  .aura-advisor-container, 
+  .currency-switcher-container,
+  .print-hidden {
+    display: none !important;
+  }
+  
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+
+  .glass-panel {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: none !important;
+    color: #1a202c !important;
+    border-radius: 8px !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    padding: 15px !important;
+    margin-bottom: 20px !important;
+  }
+
+  .glass-panel h2, .glass-panel h3, .glass-panel h4 {
+    color: #1a202c !important;
+  }
+
+  .text-secondary, .text-muted {
+    color: #718096 !important;
+  }
+
+  .text-white {
+    color: #1a202c !important;
+  }
+
+  table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+  }
+
+  th, td {
+    border: 1px solid #e2e8f0 !important;
+    padding: 8px !important;
+    color: #1a202c !important;
+  }
+
+  th {
+    background-color: #f7fafc !important;
+  }
+
+  tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+
+
 
 

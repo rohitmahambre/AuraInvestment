@@ -13,7 +13,7 @@ export interface Portfolio {
   updatedAt: any;
 }
 
-export type InvestmentType = 'stock' | 'mutual_fund' | 'fd' | 'savings' | 'other';
+export type InvestmentType = 'stock' | 'mutual_fund' | 'fd' | 'savings' | 'other' | 'insurance';
 export type InvestmentRegion = 'India' | 'Europe' | 'Other';
 export type InvestmentCurrency = 'INR' | 'EUR' | 'USD';
 
@@ -33,10 +33,24 @@ export interface Investment {
   compoundingFrequency?: 'monthly' | 'quarterly' | 'half-yearly' | 'yearly';
   startDate?: string; // ISO Date YYYY-MM-DD
   maturityDate?: string; // ISO Date YYYY-MM-DD
+  purchaseExchangeRate?: number; // Exchange rate relative to EUR (1 EUR = X of currency) at purchase
   institution: string;
   notes?: string;
   ticker?: string;
   schemeCode?: number;
+  isSipActive?: boolean;
+  sipAmount?: number;
+  sipFrequency?: 'weekly' | 'monthly' | 'quarterly';
+  sipDay?: number; // Calendar day of execution (1-28)
+  
+  // Insurance policy fields
+  policyType?: 'term' | 'health' | 'life' | 'motor' | 'other';
+  sumAssured?: number;
+  premiumAmount?: number;
+  premiumFrequency?: 'monthly' | 'quarterly' | 'half-yearly' | 'yearly';
+  premiumDueDate?: string; // YYYY-MM-DD
+  policyNumber?: string;
+
   createdAt: any;
   updatedAt: any;
 }

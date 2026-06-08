@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { Investment, ExchangeRates, InvestmentCurrency } from '../types';
-import { convertCurrency, formatCurrency } from '../utils/exchangeRates';
+import { convertCurrency, formatCurrency, getHistoricalRate } from '../utils/exchangeRates';
 import { 
   ResponsiveContainer, 
   PieChart, 
@@ -16,7 +16,7 @@ import {
 } from 'recharts';
 import { 
   Wallet, ArrowUpRight, ArrowDownRight, Globe, Percent, ShieldCheck,
-  ArrowLeft, Landmark, Eye, BarChart3
+  ArrowLeft, Landmark, Eye, BarChart3, Printer, AlertCircle
 } from 'lucide-react';
 
 interface DashboardOverviewProps {
@@ -41,9 +41,119 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
     return sum + convertCurrency(inv.currentValue, inv.currency, displayCurrency, rates);
   }, 0);
 
+  // FX Impact Calculation
+  const totalInvestedHistorical = investments.reduce((sum, inv) => {
+    if (inv.currency === displayCurrency) {
+      return sum + inv.amountInvested;
+    }
+    const histRate = getHistoricalRate(inv.currency, displayCurrency, inv.startDate, rates);
+    return sum + (inv.amountInvested * histRate);
+  }, 0);
+
+  const totalGainWithHistorical = totalCurrentValue - totalInvestedHistorical;
+
+  const totalFxImpact = investments.reduce((sum, inv) => {
+    if (inv.currency === displayCurrency) return sum;
+    const currentRate = convertCurrency(1, inv.currency, displayCurrency, rates);
+    const histRate = getHistoricalRate(inv.currency, displayCurrency, inv.startDate, rates);
+    const impact = inv.currentValue * (currentRate - histRate);
+    return sum + impact;
+  }, 0);
+
+  const totalAssetGain = totalGainWithHistorical - totalFxImpact;
+
   const absoluteGainLoss = totalCurrentValue - totalInvested;
   const gainLossPercentage = totalInvested > 0 ? (absoluteGainLoss / totalInvested) * 100 : 0;
   const isProfit = absoluteGainLoss >= 0;
+
+  // Calculate upcoming payments (SIPs + Insurance Premiums) in next 30 days
+  const getNextExecutionDate = (sipDay: number) => {
+    const now = new Date();
+    let execDate = new Date(now.getFullYear(), now.getMonth(), sipDay);
+    if (sipDay < now.getDate()) {
+      execDate = new Date(now.getFullYear(), now.getMonth() + 1, sipDay);
+    }
+    return execDate;
+  };
+
+  const getDaysUntil = (execDate: Date) => {
+    const now = new Date();
+    const d1 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const d2 = new Date(execDate.getFullYear(), execDate.getMonth(), execDate.getDate());
+    const diffTime = d2.getTime() - d1.getTime();
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  };
+
+  const getInsuranceDaysUntil = (dueDateStr: string) => {
+    if (!dueDateStr) return 999;
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const parts = dueDateStr.split('-');
+    const due = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+    const diffTime = due.getTime() - today.getTime();
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  };
+
+  const sipsList = investments
+    .filter(inv => inv.isSipActive && inv.sipAmount && inv.sipDay)
+    .map(inv => {
+      const execDate = getNextExecutionDate(inv.sipDay!);
+      const daysLeft = getDaysUntil(execDate);
+      return {
+        id: `${inv.id}-sip`,
+        paymentType: 'sip' as const,
+        name: inv.name,
+        institution: inv.institution,
+        frequency: inv.sipFrequency || 'monthly',
+        currency: inv.currency,
+        rawAmount: inv.sipAmount!,
+        dueDate: execDate,
+        daysLeft,
+        amountInDisplayCurrency: convertCurrency(inv.sipAmount!, inv.currency, displayCurrency, rates)
+      };
+    });
+
+  const premiumsList = investments
+    .filter(inv => inv.type === 'insurance' && inv.premiumAmount && inv.premiumDueDate)
+    .map(inv => {
+      const daysLeft = getInsuranceDaysUntil(inv.premiumDueDate!);
+      const parts = inv.premiumDueDate!.split('-');
+      const dueDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+      return {
+        id: `${inv.id}-premium`,
+        paymentType: 'insurance_premium' as const,
+        name: inv.name,
+        institution: inv.institution,
+        frequency: inv.premiumFrequency || 'yearly',
+        currency: inv.currency,
+        rawAmount: inv.premiumAmount!,
+        dueDate,
+        daysLeft,
+        amountInDisplayCurrency: convertCurrency(inv.premiumAmount!, inv.currency, displayCurrency, rates)
+      };
+    });
+
+  const upcomingPayments = [...sipsList, ...premiumsList]
+    .filter(item => item.daysLeft >= -5 && item.daysLeft <= 30)
+    .sort((a, b) => a.daysLeft - b.daysLeft);
+
+  // Insurance Coverage Aggregates
+  const insurancePolicies = investments.filter(inv => inv.type === 'insurance');
+  const totalTermCover = insurancePolicies
+    .filter(p => p.policyType === 'term')
+    .reduce((sum, p) => sum + convertCurrency(p.sumAssured || 0, p.currency, displayCurrency, rates), 0);
+
+  const totalHealthCover = insurancePolicies
+    .filter(p => p.policyType === 'health')
+    .reduce((sum, p) => sum + convertCurrency(p.sumAssured || 0, p.currency, displayCurrency, rates), 0);
+
+  const totalLifeCover = insurancePolicies
+    .filter(p => p.policyType === 'life')
+    .reduce((sum, p) => sum + convertCurrency(p.sumAssured || 0, p.currency, displayCurrency, rates), 0);
+
+  const totalOtherCover = insurancePolicies
+    .filter(p => p.policyType === 'motor' || p.policyType === 'other')
+    .reduce((sum, p) => sum + convertCurrency(p.sumAssured || 0, p.currency, displayCurrency, rates), 0);
 
   // State for interactive drill-downs and spotlight
   const [selectedType, setSelectedType] = useState<string | null>(null);
@@ -211,21 +321,31 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           </p>
         </div>
         
-        {/* Currency Switcher */}
-        <div className="flex items-center gap-2 bg-surface-dark p-1 rounded-xl border border-white/5 self-start md:self-auto">
-          {(['INR', 'EUR', 'USD'] as InvestmentCurrency[]).map((cur) => (
-            <button
-              key={cur}
-              onClick={() => setDisplayCurrency(cur)}
-              className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 ${
-                displayCurrency === cur
-                  ? 'bg-gradient-to-tr from-teal-500 to-teal-400 text-black shadow-lg shadow-teal-500/10'
-                  : 'text-secondary hover:text-white'
-              }`}
-            >
-              {cur}
-            </button>
-          ))}
+        <div className="flex items-center gap-3 self-start md:self-auto no-print">
+          {/* Currency Switcher */}
+          <div className="flex items-center gap-2 bg-surface-dark p-1 rounded-xl border border-white/5">
+            {(['INR', 'EUR', 'USD'] as InvestmentCurrency[]).map((cur) => (
+              <button
+                key={cur}
+                onClick={() => setDisplayCurrency(cur)}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 ${
+                  displayCurrency === cur
+                    ? 'bg-gradient-to-tr from-teal-500 to-teal-400 text-black shadow-lg shadow-teal-500/10'
+                    : 'text-secondary hover:text-white'
+                }`}
+              >
+                {cur}
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={() => window.print()}
+            className="btn btn-secondary py-1.5 px-4 text-xs font-bold flex items-center gap-2 border-white/5 hover:border-teal-500/30 text-secondary hover:text-white"
+          >
+            <Printer className="w-4 h-4 text-teal-400" />
+            Export Wealth Report
+          </button>
         </div>
       </div>
 
@@ -303,6 +423,218 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         </div>
       ) : (
         <>
+          {/* Upcoming Payments Forecasting Calendar */}
+          {upcomingPayments.length > 0 && (
+            <div className="glass-panel p-6 border-l-4 border-l-indigo-400 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest block flex items-center gap-1.5">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
+                    </span>
+                    Cashflow Forecasting & Premium Calendar
+                  </span>
+                  <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                    Upcoming Premium & SIP Payments
+                  </h3>
+                  <p className="text-xs text-secondary leading-relaxed">
+                    Chronological timeline of recurring investments and policy premiums due in the next 30 days.
+                  </p>
+                </div>
+                <div className="p-3 bg-indigo-950/10 rounded-xl border border-indigo-500/10 text-xs text-indigo-300 max-w-sm flex items-start gap-2 self-start sm:self-auto">
+                  <AlertCircle className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                  <span>
+                    <strong>Note:</strong> Ensure linked bank accounts at target institutions have sufficient capital on execution dates.
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
+                {upcomingPayments.map((item) => {
+                  const formattedDate = item.dueDate.toLocaleDateString(undefined, {
+                    day: '2-digit',
+                    month: 'short',
+                    year: 'numeric'
+                  });
+
+                  return (
+                    <div key={item.id} className="relative bg-white/[0.01] hover:bg-white/[0.03] p-4 rounded-xl border border-white/5 transition-all duration-200 flex flex-col justify-between">
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-start">
+                          <span className={`text-[10px] font-bold font-mono uppercase bg-white/5 px-2 py-0.5 rounded border border-white/10 ${
+                            item.paymentType === 'sip' ? 'text-teal-400 border-teal-500/10' : 'text-indigo-400 border-indigo-500/10'
+                          }`}>
+                            {item.paymentType === 'sip' ? `🔄 SIP / ${item.frequency}` : `🛡️ Premium / ${item.frequency}`}
+                          </span>
+                          <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded font-mono ${
+                            item.daysLeft < 0 ? 'bg-red-500/20 border border-red-500/30 text-red-300 font-extrabold animate-pulse' :
+                            item.daysLeft === 0 ? 'bg-red-500/10 border border-red-500/25 text-red-400 animate-pulse' :
+                            item.daysLeft === 1 ? 'bg-amber-500/10 border border-amber-500/25 text-amber-400' :
+                            'bg-teal-500/10 border border-teal-500/25 text-teal-400'
+                          }`}>
+                            {item.daysLeft < 0 ? `Overdue (${Math.abs(item.daysLeft)}d)` :
+                             item.daysLeft === 0 ? 'Today' :
+                             item.daysLeft === 1 ? 'Tomorrow' :
+                             `In ${item.daysLeft} days`}
+                          </span>
+                        </div>
+
+                        <div>
+                          <h4 className="text-sm font-bold text-white truncate">{item.name}</h4>
+                          <p className="text-xs text-secondary">{item.institution}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-end justify-between mt-4 pt-3 border-t border-white/5">
+                        <div>
+                          <span className="text-[9px] text-secondary uppercase font-bold block">
+                            {item.paymentType === 'sip' ? 'Execute Date' : 'Premium Due Date'}
+                          </span>
+                          <span className="text-xs font-semibold text-white">{formattedDate}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-sm font-extrabold text-teal-400 font-mono">
+                            {formatCurrency(item.rawAmount, item.currency)}
+                          </span>
+                          {item.currency !== displayCurrency && (
+                            <span className="text-[10px] text-secondary block font-mono">
+                              ≈ {formatCurrency(item.amountInDisplayCurrency, displayCurrency)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Financial Safety Net Coverages Aggregates */}
+          {insurancePolicies.length > 0 && (
+            <div className="glass-panel p-6 border-l-4 border-l-emerald-400 space-y-4">
+              <div className="space-y-1">
+                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest block">Financial Safety Net</span>
+                <h3 className="text-xl font-bold text-white">Active Insurance Coverages</h3>
+                <p className="text-xs text-secondary leading-relaxed">
+                  Aggregated values of active policy shields securing your net worth, health, and family dependencies.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
+                {totalTermCover > 0 && (
+                  <div className="bg-white/[0.01] p-4 rounded-xl border border-white/5 space-y-2">
+                    <div className="flex justify-between items-center text-xs font-semibold text-secondary">
+                      <span>TERM LIFE COVER</span>
+                      <span className="text-emerald-400 font-bold">Active</span>
+                    </div>
+                    <div className="text-xl font-extrabold text-white font-mono">
+                      {formatCurrency(totalTermCover, displayCurrency)}
+                    </div>
+                    <p className="text-[10px] text-secondary">Sum assured payout for family security</p>
+                  </div>
+                )}
+                
+                {totalHealthCover > 0 && (
+                  <div className="bg-white/[0.01] p-4 rounded-xl border border-white/5 space-y-2">
+                    <div className="flex justify-between items-center text-xs font-semibold text-secondary">
+                      <span>HEALTH / MEDICAL</span>
+                      <span className="text-emerald-400 font-bold">Active</span>
+                    </div>
+                    <div className="text-xl font-extrabold text-white font-mono">
+                      {formatCurrency(totalHealthCover, displayCurrency)}
+                    </div>
+                    <p className="text-[10px] text-secondary">Medical hospitalization limits protection</p>
+                  </div>
+                )}
+
+                {totalLifeCover > 0 && (
+                  <div className="bg-white/[0.01] p-4 rounded-xl border border-white/5 space-y-2">
+                    <div className="flex justify-between items-center text-xs font-semibold text-secondary">
+                      <span>ENDOWMENT LIFE</span>
+                      <span className="text-indigo-400 font-bold">Cash Value</span>
+                    </div>
+                    <div className="text-xl font-extrabold text-white font-mono">
+                      {formatCurrency(totalLifeCover, displayCurrency)}
+                    </div>
+                    <p className="text-[10px] text-secondary">Surrender value counted in Net Worth</p>
+                  </div>
+                )}
+
+                {totalOtherCover > 0 && (
+                  <div className="bg-white/[0.01] p-4 rounded-xl border border-white/5 space-y-2">
+                    <div className="flex justify-between items-center text-xs font-semibold text-secondary">
+                      <span>MOTOR & OTHER COVERS</span>
+                      <span className="text-secondary">Protected</span>
+                    </div>
+                    <div className="text-xl font-extrabold text-white font-mono">
+                      {formatCurrency(totalOtherCover, displayCurrency)}
+                    </div>
+                    <p className="text-[10px] text-secondary">Vehicle and general asset coverages</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* FX Impact Analyser Panel */}
+          {investments.some(inv => inv.currency !== displayCurrency) && (
+            <div className="glass-panel p-6 border-l-4 border-l-teal-400">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-teal-400 uppercase tracking-widest block">Multi-Currency FX Impact Analyser</span>
+                  <h3 className="text-xl font-bold text-white">Currency Appreciation & Depreciation Effects</h3>
+                  <p className="text-xs text-secondary leading-relaxed max-w-2xl">
+                    Analyzing how exchange rate fluctuations from purchase dates to current live rates have affected your portfolio value.
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs text-secondary block font-semibold">Total FX Gain/Loss</span>
+                  <div className={`text-2xl font-bold font-mono ${totalFxImpact >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {totalFxImpact >= 0 ? '+' : ''}{formatCurrency(totalFxImpact, displayCurrency)}
+                  </div>
+                  <span className="text-[10px] text-secondary">
+                    ({(totalInvestedHistorical > 0 ? (totalFxImpact / totalInvestedHistorical) * 100 : 0).toFixed(2)}% FX Return)
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 pt-6 border-t border-white/5">
+                <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5">
+                  <span className="text-[10px] text-secondary uppercase font-bold block mb-1">True Invested Capital</span>
+                  <span className="text-lg font-semibold font-mono text-white">
+                    {formatCurrency(totalInvestedHistorical, displayCurrency)}
+                  </span>
+                  <span className="text-[10px] text-secondary block mt-0.5">Calculated at purchase-date exchange rates</span>
+                </div>
+                
+                <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5">
+                  <span className="text-[10px] text-secondary uppercase font-bold block mb-1">Pure Asset Return</span>
+                  <span className={`text-lg font-bold font-mono ${totalAssetGain >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {totalAssetGain >= 0 ? '+' : ''}{formatCurrency(totalAssetGain, displayCurrency)}
+                  </span>
+                  <span className="text-[10px] text-secondary block mt-0.5">Gain/loss excluding exchange rate shifts</span>
+                </div>
+
+                <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5">
+                  <span className="text-[10px] text-secondary uppercase font-bold block mb-1">FX Appreciation Impact</span>
+                  <span className={`text-lg font-bold font-mono ${totalFxImpact >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {totalFxImpact >= 0 ? '+' : ''}{formatCurrency(totalFxImpact, displayCurrency)}
+                  </span>
+                  <span className="text-[10px] text-secondary block mt-0.5">Gain/loss strictly due to exchange rate shifts</span>
+                </div>
+              </div>
+              
+              {investments.some(inv => !inv.startDate && inv.currency !== displayCurrency) && (
+                <div className="mt-4 p-2.5 bg-amber-500/5 border border-amber-500/10 rounded-xl text-[10px] text-amber-400/90 flex items-center gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 animate-pulse text-amber-400" />
+                  <span>Some foreign investments do not have a Purchase Date. Estimated historical rates are used as baseline fallbacks.</span>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Charts Row 1: Asset Type & Geographic Allocations */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             

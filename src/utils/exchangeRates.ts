@@ -76,3 +76,56 @@ export const formatCurrency = (amount: number, currency: 'INR' | 'EUR' | 'USD'):
 
   return new Intl.NumberFormat(locales[currency], formattingOptions).format(amount);
 };
+
+export const getHistoricalRate = (
+  from: 'INR' | 'EUR' | 'USD',
+  to: 'INR' | 'EUR' | 'USD',
+  dateStr?: string,
+  rates?: ExchangeRates
+): number => {
+  if (from === to) return 1;
+  if (!dateStr || !rates) return convertCurrency(1, from, to, rates || FALLBACK_RATES);
+
+  const year = parseInt(dateStr.split('-')[0]) || 2026;
+
+  // Conversion via EUR (rates are EUR base)
+  let amountInEur = 1;
+  if (from === 'INR') {
+    let eurInInr = rates.INR; // default to current
+    if (year <= 2021) eurInInr = 87.5;
+    else if (year === 2022) eurInInr = 82.5;
+    else if (year === 2023) eurInInr = 89.2;
+    else if (year === 2024) eurInInr = 90.8;
+    else if (year === 2025) eurInInr = 89.5;
+    amountInEur = 1 / eurInInr;
+  } else if (from === 'USD') {
+    let eurInUsd = rates.USD; // default to current
+    if (year <= 2021) eurInUsd = 1.18;
+    else if (year === 2022) eurInUsd = 1.05;
+    else if (year === 2023) eurInUsd = 1.08;
+    else if (year === 2024) eurInUsd = 1.09;
+    else if (year === 2025) eurInUsd = 1.07;
+    amountInEur = 1 / eurInUsd;
+  }
+
+  if (to === 'INR') {
+    let eurInInr = rates.INR;
+    if (year <= 2021) eurInInr = 87.5;
+    else if (year === 2022) eurInInr = 82.5;
+    else if (year === 2023) eurInInr = 89.2;
+    else if (year === 2024) eurInInr = 90.8;
+    else if (year === 2025) eurInInr = 89.5;
+    return amountInEur * eurInInr;
+  } else if (to === 'USD') {
+    let eurInUsd = rates.USD;
+    if (year <= 2021) eurInUsd = 1.18;
+    else if (year === 2022) eurInUsd = 1.05;
+    else if (year === 2023) eurInUsd = 1.08;
+    else if (year === 2024) eurInUsd = 1.09;
+    else if (year === 2025) eurInUsd = 1.07;
+    return amountInEur * eurInUsd;
+  }
+
+  return amountInEur; // To is EUR
+};
+

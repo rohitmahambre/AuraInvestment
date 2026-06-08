@@ -3,8 +3,8 @@ import { db } from '../firebase';
 import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import type { Investment, InvestmentCurrency, ExchangeRates } from '../types';
 import { convertCurrency, formatCurrency } from '../utils/exchangeRates';
-import { 
-  Target, TrendingUp, Trash2, Save, AlertCircle, 
+import {
+  Target, TrendingUp, Trash2, Save, AlertCircle,
   Sparkles, RefreshCw, Compass, HelpCircle, CheckCircle2
 } from 'lucide-react';
 import {
@@ -50,7 +50,7 @@ export const GoalPlanner: React.FC<GoalPlannerProps> = ({
   // Goal List and Selection
   const [goals, setGoals] = useState<Goal[]>([]);
   const [selectedGoalId, setSelectedGoalId] = useState<string>('new');
-  
+
   // Goal Form State
   const [goalName, setGoalName] = useState('');
   const [targetAmount, setTargetAmount] = useState('1000000');
@@ -58,7 +58,14 @@ export const GoalPlanner: React.FC<GoalPlannerProps> = ({
   const [targetYears, setTargetYears] = useState('5');
   const [monthlyContribution, setMonthlyContribution] = useState('10000');
   const [riskProfile, setRiskProfile] = useState<'conservative' | 'balanced' | 'aggressive'>('balanced');
-  
+
+  // FIRE Planner States
+  const [plannerMode, setPlannerMode] = useState<'standard' | 'fire'>('standard');
+  const [fireMonthlyExpenses, setFireMonthlyExpenses] = useState('50000');
+  const [fireYearsToRetire, setFireYearsToRetire] = useState('15');
+  const [fireInflationRate, setFireInflationRate] = useState('6');
+  const [firePostRetireReturn, setFirePostRetireReturn] = useState('8');
+
   // Status and Loading
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -122,7 +129,7 @@ export const GoalPlanner: React.FC<GoalPlannerProps> = ({
         list.push(docSnap.data() as Goal);
       });
       setGoals(list);
-      
+
       // Auto-select first goal or reset to 'new'
       if (list.length > 0) {
         setSelectedGoalId(list[0].id);
@@ -251,13 +258,13 @@ export const GoalPlanner: React.FC<GoalPlannerProps> = ({
   // MATHEMATICAL CALCULATIONS & PROJECTIONS
   // ==========================================
 
-  // Asset return rate assumptions
   const assetRates = {
     stock: 0.12,        // 12%
     mutual_fund: 0.10,  // 10%
     fd: 0.065,          // 6.5%
     savings: 0.035,     // 3.5%
-    other: 0.05         // 5%
+    other: 0.05,        // 5%
+    insurance: 0.0      // 0% return for insurance premiums
   };
 
   // 1. Calculate current portfolio value in goal's target currency
@@ -270,7 +277,7 @@ export const GoalPlanner: React.FC<GoalPlannerProps> = ({
     if (investments.length === 0 || currentValTargetCurr === 0) {
       return 0.08; // default to 8% if empty
     }
-    
+
     let totalWeightedReturns = 0;
     investments.forEach((inv) => {
       const invValInTarget = convertCurrency(inv.currentValue, inv.currency, targetCurrency, rates);
@@ -282,6 +289,26 @@ export const GoalPlanner: React.FC<GoalPlannerProps> = ({
   };
 
   const weightedRate = calculateWeightedReturnRate();
+
+  const getSipMonthlyTotalInTargetCurrency = () => {
+    let totalMonthlySIP = 0;
+    investments.forEach((inv) => {
+      if (inv.isSipActive && inv.sipAmount) {
+        // Convert amount to target currency
+        const amtInTarget = convertCurrency(inv.sipAmount, inv.currency, targetCurrency, rates);
+
+        // Normalize frequency
+        if (inv.sipFrequency === 'weekly') {
+          totalMonthlySIP += amtInTarget * (52 / 12);
+        } else if (inv.sipFrequency === 'monthly') {
+          totalMonthlySIP += amtInTarget;
+        } else if (inv.sipFrequency === 'quarterly') {
+          totalMonthlySIP += amtInTarget / 3;
+        }
+      }
+    });
+    return Math.round(totalMonthlySIP);
+  };
 
   // 3. Binary Search to find the Required annual return rate to hit the goal
   const parseNum = (val: string, def: number) => {
@@ -301,7 +328,7 @@ export const GoalPlanner: React.FC<GoalPlannerProps> = ({
   ): number => {
     let low = -0.5; // allow negative returns
     let high = 1.5;  // cap search up to 150% rate
-    
+
     const calculateFV = (annualRate: number) => {
       let fv = startVal;
       const monthlyRate = annualRate / 12;
@@ -365,6 +392,62 @@ export const GoalPlanner: React.FC<GoalPlannerProps> = ({
   const hasShortfall = finalProjected < goalAmt;
   const shortfallAmt = goalAmt - finalProjected;
 
+  // FIRE Calculations & Projections
+  const fireMonthlyExpensesVal = parseNum(fireMonthlyExpenses, 50000);
+  const fireYearsToRetireVal = parseNum(fireYearsToRetire, 15);
+  const fireInflationRateVal = parseNum(fireInflationRate, 6) / 100;
+  const firePostRetireReturnVal = parseNum(firePostRetireReturn, 8) / 100;
+
+  const fireAnnualExpenses = fireMonthlyExpensesVal * 12;
+  const fiNumber = fireAnnualExpenses * 25;
+  const fatFireNumber = fireAnnualExpenses * 33;
+
+  const generateFireChartData = () => {
+    const data = [];
+    let capital = currentValTargetCurr;
+
+    const preRetireRate = weightedRate;
+    const postRetireRate = firePostRetireReturnVal;
+
+    const monthlyPreRetireRate = preRetireRate / 12;
+    const monthlyPostRetireRate = postRetireRate / 12;
+    const monthlyInflationRate = fireInflationRateVal / 12;
+
+    data.push({
+      year: 'Year 0',
+      'Portfolio Capital': Math.round(capital),
+      'Inflation-Adjusted Expense': Math.round(fireAnnualExpenses)
+    });
+
+    for (let y = 1; y <= 30; y++) {
+      for (let m = 0; m < 12; m++) {
+        const totalMonths = (y - 1) * 12 + m;
+        if (y <= fireYearsToRetireVal) {
+          // Accumulation phase
+          capital = capital * (1 + monthlyPreRetireRate) + goalMc;
+        } else {
+          // Drawdown phase
+          const inflatedMonthlyExpense = fireMonthlyExpensesVal * Math.pow(1 + monthlyInflationRate, totalMonths);
+          capital = capital * (1 + monthlyPostRetireRate) - inflatedMonthlyExpense;
+        }
+        if (capital < 0) capital = 0;
+      }
+
+      const inflatedAnnualExpense = fireAnnualExpenses * Math.pow(1 + fireInflationRateVal, y);
+      data.push({
+        year: `Year ${y}`,
+        'Portfolio Capital': Math.round(capital),
+        'Inflation-Adjusted Expense': Math.round(inflatedAnnualExpense)
+      });
+    }
+
+    return data;
+  };
+
+  const fireChartData = generateFireChartData();
+  const fireFinalCapital = fireChartData[fireChartData.length - 1]['Portfolio Capital'];
+  const isFireShortfall = fireFinalCapital === 0;
+
   // ==========================================
   // GEMINI AI INTEGRATION
   // ==========================================
@@ -417,7 +500,7 @@ Format your response in beautiful, premium Markdown with clear visual alerts and
     try {
       const modelName = "gemini-2.5-flash";
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-      
+
       const requestBody = {
         contents: [{ parts: [{ text: prompt }] }],
         systemInstruction: { parts: [{ text: systemInstruction }] }
@@ -453,23 +536,55 @@ Format your response in beautiful, premium Markdown with clear visual alerts and
             <Target className="w-5.5 h-5.5 text-teal-400" />
           </div>
           <div>
-            <h2 className="text-xl font-bold">Goal Planner</h2>
-            <p className="text-xs text-secondary font-mono">Map compounding projections & get AI rebalancing advice</p>
+            <h2 className="text-xl font-bold">{plannerMode === 'standard' ? 'Goal Planner' : 'Smart FIRE Planner'}</h2>
+            <p className="text-xs text-secondary font-mono">
+              {plannerMode === 'standard'
+                ? 'Map compounding projections & get AI rebalancing advice'
+                : 'Project retirement runway growth & safe withdrawal rates'}
+            </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 w-full sm:w-auto">
-          <label className="text-[10px] font-bold text-secondary uppercase shrink-0 m-0">Active Goal:</label>
-          <select 
-            value={selectedGoalId} 
-            onChange={(e) => setSelectedGoalId(e.target.value)}
-            className="py-1.5 px-3 text-xs bg-black/40 border border-white/10 rounded-lg text-white font-semibold outline-none w-full sm:w-[220px]"
-          >
-            <option value="new">+ Set up New Goal</option>
-            {goals.map(g => (
-              <option key={g.id} value={g.id}>{g.name}</option>
-            ))}
-          </select>
+        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+          {/* Mode Switcher */}
+          <div className="flex items-center gap-1.5 bg-surface-dark p-1 rounded-xl border border-white/5 no-print">
+            <button
+              type="button"
+              onClick={() => setPlannerMode('standard')}
+              className={`px-3 py-1 text-xs font-bold transition-all duration-200 ${plannerMode === 'standard'
+                  ? 'bg-gradient-to-tr from-teal-500 to-teal-400 text-black shadow-lg shadow-teal-500/10'
+                  : 'text-secondary hover:text-white'
+                }`}
+            >
+              Standard Goals
+            </button>
+            <button
+              type="button"
+              onClick={() => setPlannerMode('fire')}
+              className={`px-3 py-1 text-xs font-bold transition-all duration-200 ${plannerMode === 'fire'
+                  ? 'bg-gradient-to-tr from-teal-500 to-teal-400 text-black shadow-lg shadow-teal-500/10'
+                  : 'text-secondary hover:text-white'
+                }`}
+            >
+              🔥 FIRE Retirement
+            </button>
+          </div>
+
+          {plannerMode === 'standard' && (
+            <div className="flex items-center gap-2">
+              <label className="text-[10px] font-bold text-secondary uppercase shrink-0 m-0">Active Goal:</label>
+              <select
+                value={selectedGoalId}
+                onChange={(e) => setSelectedGoalId(e.target.value)}
+                className="py-1.5 px-3 text-xs bg-black/40 border border-white/10 rounded-lg text-white font-semibold outline-none w-full sm:w-[200px]"
+              >
+                <option value="new">+ Set up New Goal</option>
+                {goals.map(g => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       </div>
 
@@ -489,240 +604,449 @@ Format your response in beautiful, premium Markdown with clear visual alerts and
 
       {/* Main Grid: Form Config & Projections */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Goal Configurator Card */}
-        <div className="glass-panel p-6 border-white/5 space-y-4 lg:col-span-1">
-          <h3 className="text-sm font-bold uppercase tracking-wider text-teal-400 flex items-center gap-1.5">
-            <Compass className="w-4 h-4" />
-            <span>Goal Configurator</span>
-          </h3>
+        {plannerMode === 'standard' ? (
+          <>
+            {/* Goal Configurator Card */}
+            <div className="glass-panel p-6 border-white/5 space-y-4 lg:col-span-1">
+              <h3 className="text-sm font-bold uppercase tracking-wider text-teal-400 flex items-center gap-1.5">
+                <Compass className="w-4 h-4" />
+                <span>Goal Configurator</span>
+              </h3>
 
-          <form onSubmit={handleSaveGoal} className="space-y-3.5">
-            <div>
-              <label>Goal Name</label>
-              <input 
-                type="text" 
-                placeholder="e.g. Retirement Fund, Home Equity"
-                value={goalName}
-                onChange={(e) => setGoalName(e.target.value)}
-                disabled={!canWrite}
-                className="py-2 px-3 text-sm bg-black/40"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label>Target Amount</label>
-                <input 
-                  type="number" 
-                  min="1"
-                  value={targetAmount}
-                  onChange={(e) => setTargetAmount(e.target.value)}
-                  disabled={!canWrite}
-                  className="py-2 px-3 text-sm bg-black/40 font-semibold"
-                />
-              </div>
-              <div>
-                <label>Currency</label>
-                <select 
-                  value={targetCurrency}
-                  onChange={(e) => setTargetCurrency(e.target.value as InvestmentCurrency)}
-                  disabled={!canWrite}
-                  className="py-2 px-3 text-sm bg-black/40 outline-none"
-                >
-                  <option value="INR">INR (₹)</option>
-                  <option value="EUR">EUR (€)</option>
-                  <option value="USD">USD ($)</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label>Timeline (Years)</label>
-                <input 
-                  type="number" 
-                  min="1"
-                  max="100"
-                  value={targetYears}
-                  onChange={(e) => setTargetYears(e.target.value)}
-                  disabled={!canWrite}
-                  className="py-2 px-3 text-sm bg-black/40 font-semibold"
-                />
-              </div>
-              <div>
-                <label>Monthly Addition</label>
-                <input 
-                  type="number" 
-                  min="0"
-                  value={monthlyContribution}
-                  onChange={(e) => setMonthlyContribution(e.target.value)}
-                  disabled={!canWrite}
-                  className="py-2 px-3 text-sm bg-black/40 font-semibold"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label>Risk Profile</label>
-              <div className="grid grid-cols-3 gap-2">
-                {(['conservative', 'balanced', 'aggressive'] as const).map((profile) => (
-                  <button
-                    key={profile}
-                    type="button"
-                    onClick={() => setRiskProfile(profile)}
+              <form onSubmit={handleSaveGoal} className="space-y-3.5">
+                <div>
+                  <label>Goal Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Retirement Fund, Home Equity"
+                    value={goalName}
+                    onChange={(e) => setGoalName(e.target.value)}
                     disabled={!canWrite}
-                    className={`py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg border transition-all duration-150 ${
-                      riskProfile === profile
-                        ? 'bg-teal-500/15 text-teal-400 border-teal-500/40 shadow-glow'
-                        : 'border-white/5 hover:border-white/20 text-secondary hover:text-white bg-transparent'
-                    }`}
-                  >
-                    {profile}
-                  </button>
-                ))}
-              </div>
-            </div>
+                    className="py-2 px-3 text-sm bg-black/40"
+                  />
+                </div>
 
-            {canWrite && (
-              <div className="flex items-center gap-2 pt-3 border-t border-white/5">
-                {selectedGoalId !== 'new' && (
-                  <button
-                    type="button"
-                    onClick={handleDeleteGoal}
-                    className="btn btn-secondary py-2 px-3 border-red-500/10 text-red-400 hover:border-red-500/40 hover:bg-red-500/5"
-                    disabled={saving}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label>Target Amount</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={targetAmount}
+                      onChange={(e) => setTargetAmount(e.target.value)}
+                      disabled={!canWrite}
+                      className="py-2 px-3 text-sm bg-black/40 font-semibold"
+                    />
+                  </div>
+                  <div>
+                    <label>Currency</label>
+                    <select
+                      value={targetCurrency}
+                      onChange={(e) => setTargetCurrency(e.target.value as InvestmentCurrency)}
+                      disabled={!canWrite}
+                      className="py-2 px-3 text-sm bg-black/40 outline-none"
+                    >
+                      <option value="INR">INR (₹)</option>
+                      <option value="EUR">EUR (€)</option>
+                      <option value="USD">USD ($)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label>Timeline (Years)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={targetYears}
+                      onChange={(e) => setTargetYears(e.target.value)}
+                      disabled={!canWrite}
+                      className="py-2 px-3 text-sm bg-black/40 font-semibold"
+                    />
+                  </div>
+                  <div>
+                    <label className="flex items-center justify-between">
+                      <span>Monthly Addition</span>
+                      {investments.some(inv => inv.isSipActive) && (
+                        <button
+                          type="button"
+                          onClick={() => setMonthlyContribution(getSipMonthlyTotalInTargetCurrency().toString())}
+                          className="text-[10px] text-teal-400 hover:text-teal-300 transition-colors font-bold underline cursor-pointer"
+                          title="Import sum of active SIPs"
+                        >
+                          Autofill from SIPs
+                        </button>
+                      )}
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={monthlyContribution}
+                      onChange={(e) => setMonthlyContribution(e.target.value)}
+                      disabled={!canWrite}
+                      className="py-2 px-3 text-sm bg-black/40 font-semibold"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label>Risk Profile</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['conservative', 'balanced', 'aggressive'] as const).map((profile) => (
+                      <button
+                        key={profile}
+                        type="button"
+                        onClick={() => setRiskProfile(profile)}
+                        disabled={!canWrite}
+                        className={`py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg border transition-all duration-150 ${riskProfile === profile
+                            ? 'bg-teal-500/15 text-teal-400 border-teal-500/40 shadow-glow'
+                            : 'border-white/5 hover:border-white/20 text-secondary hover:text-white bg-transparent'
+                          }`}
+                      >
+                        {profile}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {canWrite && (
+                  <div className="flex items-center gap-2 pt-3 border-t border-white/5">
+                    {selectedGoalId !== 'new' && (
+                      <button
+                        type="button"
+                        onClick={handleDeleteGoal}
+                        className="btn btn-secondary py-2 px-3 border-red-500/10 text-red-400 hover:border-red-500/40 hover:bg-red-500/5"
+                        disabled={saving}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                    <button
+                      type="submit"
+                      className="btn btn-primary flex-grow py-2 text-sm"
+                      disabled={saving}
+                    >
+                      <Save className="w-4 h-4" />
+                      <span>{saving ? 'Saving...' : 'Save Goal'}</span>
+                    </button>
+                  </div>
                 )}
-                <button
-                  type="submit"
-                  className="btn btn-primary flex-grow py-2 text-sm"
-                  disabled={saving}
-                >
-                  <Save className="w-4 h-4" />
-                  <span>{saving ? 'Saving...' : 'Save Goal'}</span>
-                </button>
+              </form>
+
+              {/* Quick Metrics */}
+              <div className="p-3.5 rounded-xl border border-white/5 bg-white/[0.01] text-xs font-mono space-y-2 pt-4">
+                <div className="flex justify-between">
+                  <span className="text-secondary">Initial Valuation:</span>
+                  <span className="text-white font-semibold">{formatCurrency(currentValTargetCurr, targetCurrency)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-secondary">Weighted Portfolio Return:</span>
+                  <span className="text-teal-400 font-semibold">{(weightedRate * 100).toFixed(2)}% / yr</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-secondary">Target Growth Required:</span>
+                  <span className="text-indigo-400 font-semibold">{(requiredRate * 100).toFixed(2)}% / yr</span>
+                </div>
               </div>
-            )}
-          </form>
-
-          {/* Quick Metrics */}
-          <div className="p-3.5 rounded-xl border border-white/5 bg-white/[0.01] text-xs font-mono space-y-2 pt-4">
-            <div className="flex justify-between">
-              <span className="text-secondary">Initial Valuation:</span>
-              <span className="text-white font-semibold">{formatCurrency(currentValTargetCurr, targetCurrency)}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-secondary">Weighted Portfolio Return:</span>
-              <span className="text-teal-400 font-semibold">{(weightedRate * 100).toFixed(2)}% / yr</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-secondary">Target Growth Required:</span>
-              <span className="text-indigo-400 font-semibold">{(requiredRate * 100).toFixed(2)}% / yr</span>
-            </div>
-          </div>
-        </div>
 
-        {/* Projection Chart Card */}
-        <div className="glass-panel p-6 border-white/5 space-y-4 lg:col-span-2 flex flex-col justify-between">
-          <div>
-            <h3 className="text-sm font-bold uppercase tracking-wider text-teal-400 flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <TrendingUp className="w-4 h-4" />
-                <span>Compound Trajectory Projection</span>
-              </div>
-              <span className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-0.5 rounded-full ${
-                hasShortfall 
-                  ? 'bg-red-950/40 border border-red-500/20 text-red-300'
-                  : 'bg-emerald-950/40 border border-emerald-500/20 text-emerald-300'
-              }`}>
-                {hasShortfall ? 'Allocation Shortfall' : 'On Track'}
-              </span>
-            </h3>
-
-            {/* Trajectory lines summary */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4 p-4 rounded-xl border border-white/5 bg-white/[0.01]">
+            {/* Projection Chart Card */}
+            <div className="glass-panel p-6 border-white/5 space-y-4 lg:col-span-2 flex flex-col justify-between">
               <div>
-                <span className="text-[10px] uppercase font-bold text-secondary tracking-widest block mb-0.5">Target Goal</span>
-                <span className="text-base font-extrabold text-white">{formatCurrency(goalAmt, targetCurrency)}</span>
+                <h3 className="text-sm font-bold uppercase tracking-wider text-teal-400 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <TrendingUp className="w-4 h-4" />
+                    <span>Compound Trajectory Projection</span>
+                  </div>
+                  <span className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-0.5 rounded-full ${hasShortfall
+                      ? 'bg-red-950/40 border border-red-500/20 text-red-300'
+                      : 'bg-emerald-950/40 border border-emerald-500/20 text-emerald-300'
+                    }`}>
+                    {hasShortfall ? 'Allocation Shortfall' : 'On Track'}
+                  </span>
+                </h3>
+
+                {/* Trajectory lines summary */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4 p-4 rounded-xl border border-white/5 bg-white/[0.01]">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-secondary tracking-widest block mb-0.5">Target Goal</span>
+                    <span className="text-base font-extrabold text-white">{formatCurrency(goalAmt, targetCurrency)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-secondary tracking-widest block mb-0.5">Projected Value</span>
+                    <span className="text-base font-extrabold text-teal-400">{formatCurrency(finalProjected, targetCurrency)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-secondary tracking-widest block mb-0.5">
+                      {hasShortfall ? 'Shortfall Gap' : 'Surplus Yield'}
+                    </span>
+                    <span className={`text-base font-extrabold ${hasShortfall ? 'text-red-400' : 'text-emerald-400'}`}>
+                      {formatCurrency(Math.abs(shortfallAmt), targetCurrency)}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div>
-                <span className="text-[10px] uppercase font-bold text-secondary tracking-widest block mb-0.5">Projected Value</span>
-                <span className="text-base font-extrabold text-teal-400">{formatCurrency(finalProjected, targetCurrency)}</span>
-              </div>
-              <div>
-                <span className="text-[10px] uppercase font-bold text-secondary tracking-widest block mb-0.5">
-                  {hasShortfall ? 'Shortfall Gap' : 'Surplus Yield'}
-                </span>
-                <span className={`text-base font-extrabold ${hasShortfall ? 'text-red-400' : 'text-emerald-400'}`}>
-                  {formatCurrency(Math.abs(shortfallAmt), targetCurrency)}
-                </span>
+
+              {/* Recharts responsive container */}
+              <div className="w-full h-64 md:h-72 mt-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                    <CartesianGrid stroke="rgba(255,255,255,0.03)" strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="year"
+                      stroke="hsl(240, 6%, 70%)"
+                      fontSize={11}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      stroke="hsl(240, 6%, 70%)"
+                      fontSize={11}
+                      tickLine={false}
+                      tickFormatter={(val) => {
+                        if (val >= 10000000) return `${(val / 10000000).toFixed(1)}Cr`;
+                        if (val >= 100000) return `${(val / 100000).toFixed(1)}L`;
+                        if (val >= 1000) return `${(val / 1000).toFixed(0)}k`;
+                        return val.toString();
+                      }}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#0b0c10',
+                        borderColor: 'rgba(255,255,255,0.1)',
+                        borderRadius: '12px',
+                        boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+                        fontSize: '11px',
+                        fontFamily: 'JetBrains Mono'
+                      }}
+                      labelStyle={{ color: 'hsl(240, 6%, 70%)', fontWeight: 'bold' }}
+                      formatter={(value: any) => [formatCurrency(value, targetCurrency), '']}
+                    />
+                    <Legend
+                      verticalAlign="top"
+                      height={36}
+                      iconType="circle"
+                      wrapperStyle={{ fontSize: '11px', fontWeight: 'bold' }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="Projected Value"
+                      stroke="hsl(172, 85%, 45%)"
+                      strokeWidth={2.5}
+                      dot={{ r: 4, strokeWidth: 0, fill: 'hsl(172, 85%, 45%)' }}
+                      activeDot={{ r: 6 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="Required Value"
+                      stroke="hsl(263, 90%, 65%)"
+                      strokeWidth={2}
+                      strokeDasharray="4 4"
+                      dot={{ r: 3, strokeWidth: 0, fill: 'hsl(263, 90%, 65%)' }}
+                      activeDot={{ r: 5 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
               </div>
             </div>
-          </div>
+          </>
+        ) : (
+          <>
+            {/* FIRE Configurator Card */}
+            <div className="glass-panel p-6 border-white/5 space-y-4 lg:col-span-1">
+              <h3 className="text-sm font-bold uppercase tracking-wider text-teal-400 flex items-center gap-1.5">
+                <Compass className="w-4 h-4" />
+                <span>FIRE Configurator</span>
+              </h3>
 
-          {/* Recharts responsive container */}
-          <div className="w-full h-64 md:h-72 mt-2">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
-                <CartesianGrid stroke="rgba(255,255,255,0.03)" strokeDasharray="3 3" />
-                <XAxis 
-                  dataKey="year" 
-                  stroke="hsl(240, 6%, 70%)" 
-                  fontSize={11}
-                  tickLine={false}
-                />
-                <YAxis 
-                  stroke="hsl(240, 6%, 70%)" 
-                  fontSize={11}
-                  tickLine={false}
-                  tickFormatter={(val) => {
-                    if (val >= 10000000) return `${(val / 10000000).toFixed(1)}Cr`;
-                    if (val >= 100000) return `${(val / 100000).toFixed(1)}L`;
-                    if (val >= 1000) return `${(val / 1000).toFixed(0)}k`;
-                    return val.toString();
-                  }}
-                />
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: '#0b0c10', 
-                    borderColor: 'rgba(255,255,255,0.1)', 
-                    borderRadius: '12px',
-                    boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
-                    fontSize: '11px',
-                    fontFamily: 'JetBrains Mono'
-                  }}
-                  labelStyle={{ color: 'hsl(240, 6%, 70%)', fontWeight: 'bold' }}
-                  formatter={(value: any) => [formatCurrency(value, targetCurrency), '']}
-                />
-                <Legend 
-                  verticalAlign="top"
-                  height={36}
-                  iconType="circle"
-                  wrapperStyle={{ fontSize: '11px', fontWeight: 'bold' }}
-                />
-                <Line 
-                  type="monotone" 
-                  dataKey="Projected Value" 
-                  stroke="hsl(172, 85%, 45%)" 
-                  strokeWidth={2.5}
-                  dot={{ r: 4, strokeWidth: 0, fill: 'hsl(172, 85%, 45%)' }}
-                  activeDot={{ r: 6 }}
-                />
-                <Line 
-                  type="monotone" 
-                  dataKey="Required Value" 
-                  stroke="hsl(263, 90%, 65%)" 
-                  strokeWidth={2}
-                  strokeDasharray="4 4"
-                  dot={{ r: 3, strokeWidth: 0, fill: 'hsl(263, 90%, 65%)' }}
-                  activeDot={{ r: 5 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+              <div className="space-y-4">
+                <div>
+                  <label>Current Monthly Expenses</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={fireMonthlyExpenses}
+                    onChange={(e) => setFireMonthlyExpenses(e.target.value)}
+                    className="py-2 px-3 text-sm bg-black/40 font-semibold"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label>Years to Retire</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={fireYearsToRetire}
+                      onChange={(e) => setFireYearsToRetire(e.target.value)}
+                      className="py-2 px-3 text-sm bg-black/40 font-semibold"
+                    />
+                  </div>
+                  <div>
+                    <label className="flex items-center justify-between">
+                      <span>Monthly Savings</span>
+                      {investments.some(inv => inv.isSipActive) && (
+                        <button
+                          type="button"
+                          onClick={() => setMonthlyContribution(getSipMonthlyTotalInTargetCurrency().toString())}
+                          className="text-[10px] text-teal-400 hover:text-teal-300 transition-colors font-bold underline cursor-pointer"
+                          title="Import sum of active SIPs"
+                        >
+                          Autofill from SIPs
+                        </button>
+                      )}
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={monthlyContribution}
+                      onChange={(e) => setMonthlyContribution(e.target.value)}
+                      className="py-2 px-3 text-sm bg-black/40 font-semibold"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label>Annual Inflation (%)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      value={fireInflationRate}
+                      onChange={(e) => setFireInflationRate(e.target.value)}
+                      className="py-2 px-3 text-sm bg-black/40 font-semibold"
+                    />
+                  </div>
+                  <div>
+                    <label>Post-Retire Return (%)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      value={firePostRetireReturn}
+                      onChange={(e) => setFirePostRetireReturn(e.target.value)}
+                      className="py-2 px-3 text-sm bg-black/40 font-semibold"
+                    />
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl border border-white/5 bg-white/[0.01] text-xs font-mono space-y-2.5 pt-4">
+                  <div className="flex justify-between">
+                    <span className="text-secondary">FI Target (25x):</span>
+                    <span className="text-white font-semibold">{formatCurrency(fiNumber, targetCurrency)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-secondary">Fat-FIRE Target (33x):</span>
+                    <span className="text-teal-400 font-semibold">{formatCurrency(fatFireNumber, targetCurrency)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-secondary">Pre-Retire Return Rate:</span>
+                    <span className="text-indigo-400 font-semibold">{(weightedRate * 100).toFixed(2)}% / yr</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* FIRE Runway Projection Card */}
+            <div className="glass-panel p-6 border-white/5 space-y-4 lg:col-span-2 flex flex-col justify-between">
+              <div>
+                <h3 className="text-sm font-bold uppercase tracking-wider text-teal-400 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <TrendingUp className="w-4 h-4" />
+                    <span>FIRE Runway Projection (30-Year Trajectory)</span>
+                  </div>
+                  <span className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-0.5 rounded-full ${isFireShortfall
+                      ? 'bg-red-950/40 border border-red-500/20 text-red-300'
+                      : 'bg-emerald-950/40 border border-emerald-500/20 text-emerald-300'
+                    }`}>
+                    {isFireShortfall ? 'Capital Depleted' : 'Sustained Runway'}
+                  </span>
+                </h3>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4 p-4 rounded-xl border border-white/5 bg-white/[0.01]">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-secondary tracking-widest block mb-0.5">FI Target (25x)</span>
+                    <span className="text-base font-extrabold text-white font-mono">{formatCurrency(fiNumber, targetCurrency)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-secondary tracking-widest block mb-0.5">Fat-FIRE Target (33x)</span>
+                    <span className="text-base font-extrabold text-teal-400 font-mono">{formatCurrency(fatFireNumber, targetCurrency)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-secondary tracking-widest block mb-0.5">Year-30 Capital</span>
+                    <span className={`text-base font-extrabold font-mono ${isFireShortfall ? 'text-red-400' : 'text-emerald-400'}`}>
+                      {formatCurrency(fireFinalCapital, targetCurrency)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Recharts responsive container */}
+              <div className="w-full h-64 md:h-72 mt-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={fireChartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                    <CartesianGrid stroke="rgba(255,255,255,0.03)" strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="year"
+                      stroke="hsl(240, 6%, 70%)"
+                      fontSize={11}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      stroke="hsl(240, 6%, 70%)"
+                      fontSize={11}
+                      tickLine={false}
+                      tickFormatter={(val) => {
+                        if (val >= 10000000) return `${(val / 10000000).toFixed(1)}Cr`;
+                        if (val >= 100000) return `${(val / 100000).toFixed(1)}L`;
+                        if (val >= 1000) return `${(val / 1000).toFixed(0)}k`;
+                        return val.toString();
+                      }}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#0b0c10',
+                        borderColor: 'rgba(255,255,255,0.1)',
+                        borderRadius: '12px',
+                        boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+                        fontSize: '11px',
+                        fontFamily: 'JetBrains Mono'
+                      }}
+                      labelStyle={{ color: 'hsl(240, 6%, 70%)', fontWeight: 'bold' }}
+                      formatter={(value: any) => [formatCurrency(value, targetCurrency), '']}
+                    />
+                    <Legend
+                      verticalAlign="top"
+                      height={36}
+                      iconType="circle"
+                      wrapperStyle={{ fontSize: '11px', fontWeight: 'bold' }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="Portfolio Capital"
+                      stroke="hsl(172, 85%, 45%)"
+                      strokeWidth={2.5}
+                      dot={{ r: 4, strokeWidth: 0, fill: 'hsl(172, 85%, 45%)' }}
+                      activeDot={{ r: 6 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="Inflation-Adjusted Expense"
+                      stroke="hsl(263, 90%, 65%)"
+                      strokeWidth={2}
+                      strokeDasharray="4 4"
+                      dot={{ r: 3, strokeWidth: 0, fill: 'hsl(263, 90%, 65%)' }}
+                      activeDot={{ r: 5 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Aura AI Goal Advisor Section */}
@@ -739,9 +1063,8 @@ Format your response in beautiful, premium Markdown with clear visual alerts and
           <button
             onClick={handleConsultAi}
             disabled={isAiLoading || !apiKey}
-            className={`btn btn-primary py-2 px-4 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${
-              !apiKey ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
+            className={`btn btn-primary py-2 px-4 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${!apiKey ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
           >
             {isAiLoading ? (
               <RefreshCw className="w-4 h-4 animate-spin" />
@@ -780,7 +1103,7 @@ Format your response in beautiful, premium Markdown with clear visual alerts and
               {aiReport.split('\n').map((line, idx) => {
                 // Formatting bullet points and bold sections
                 let cleanLine = line;
-                
+
                 // Blockquotes/Alerts styling
                 if (line.startsWith('> ')) {
                   return (

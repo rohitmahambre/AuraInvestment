@@ -9,6 +9,7 @@ import { AuraAdvisor } from './components/AuraAdvisor';
 import { MutualFundOverlap } from './components/MutualFundOverlap';
 import { GoalPlanner } from './components/GoalPlanner';
 import { TaxResidency } from './components/TaxResidency';
+import { RebalancerSandbox } from './components/RebalancerSandbox';
 import type { Portfolio, Investment, ExchangeRates, InvestmentCurrency } from './types';
 import { fetchExchangeRates } from './utils/exchangeRates';
 import { 
@@ -26,12 +27,12 @@ import {
   TrendingUp, LayoutDashboard, LineChart, 
   FileSpreadsheet, Users, LogOut, ChevronRight,
   User, RefreshCw, AlertCircle, Plus, Folder,
-  Layers, Target, Calendar
+  Layers, Target, Calendar, Scale
 } from 'lucide-react';
 
 function DashboardShell() {
   const { user, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState<'overview' | 'investments' | 'import' | 'sharing' | 'overlap' | 'goals' | 'tax'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'investments' | 'import' | 'sharing' | 'overlap' | 'goals' | 'tax' | 'rebalance'>('overview');
   
   // Portfolios
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
@@ -542,6 +543,24 @@ function DashboardShell() {
 
             <button
               onClick={() => {
+                console.log("Tab clicked: rebalance");
+                setActiveTab('rebalance');
+              }}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                activeTab === 'rebalance'
+                  ? 'bg-teal-500/10 text-teal-400 border-l-2 border-teal-500'
+                  : 'text-secondary hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <span className="flex items-center gap-2.5">
+                <Scale className="w-4 h-4" />
+                Asset Rebalancer
+              </span>
+              <ChevronRight className="w-3.5 h-3.5 opacity-60" />
+            </button>
+
+            <button
+              onClick={() => {
                 console.log("Tab clicked: import");
                 setActiveTab('import');
               }}
@@ -732,6 +751,24 @@ function DashboardShell() {
                 <h3 className="text-xl font-bold mb-2">No Active Portfolio</h3>
                 <p className="text-secondary max-w-sm">
                   Please select or create a portfolio from the sidebar workspace selector to track tax residency.
+                </p>
+              </div>
+            )
+          )}
+
+          {activeTab === 'rebalance' && (
+            activePortfolio ? (
+              <RebalancerSandbox
+                investments={investments}
+                rates={rates}
+                displayCurrency={displayCurrency}
+              />
+            ) : (
+              <div className="glass-panel p-12 text-center flex flex-col items-center justify-center">
+                <AlertCircle className="w-16 h-16 text-yellow-500/60 mb-4" />
+                <h3 className="text-xl font-bold mb-2">No Active Portfolio</h3>
+                <p className="text-secondary max-w-sm">
+                  Please select or create a portfolio from the sidebar workspace selector to rebalance assets.
                 </p>
               </div>
             )

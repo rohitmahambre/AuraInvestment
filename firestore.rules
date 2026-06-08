@@ -102,12 +102,15 @@ service cloud.firestore {
         'amountInvested', 'currentValue', 'units', 'purchasePrice',
         'interestRate', 'interestType', 'compoundingFrequency',
         'startDate', 'maturityDate', 'institution', 'notes', 
-        'ticker', 'schemeCode', 'createdAt', 'updatedAt'
+        'ticker', 'schemeCode', 
+        'isSipActive', 'sipAmount', 'sipFrequency', 'sipDay',
+        'policyType', 'sumAssured', 'premiumAmount', 'premiumFrequency', 'premiumDueDate', 'policyNumber',
+        'createdAt', 'updatedAt'
       ]) &&
       data.id is string &&
       data.portfolioId is string &&
       data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
-      data.type in ['stock', 'mutual_fund', 'fd', 'savings', 'other'] &&
+      data.type in ['stock', 'mutual_fund', 'fd', 'savings', 'other', 'insurance'] &&
       data.region in ['India', 'Europe', 'Other'] &&
       data.currency in ['INR', 'EUR', 'USD'] &&
       data.amountInvested is number && data.amountInvested >= 0 &&
@@ -123,6 +126,21 @@ service cloud.firestore {
       (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000)) &&
       (!('ticker' in data) || (data.ticker is string && data.ticker.size() <= 100)) &&
       (!('schemeCode' in data) || (data.schemeCode is number && data.schemeCode >= 0)) &&
+      
+      // SIP Rules
+      (!('isSipActive' in data) || (data.isSipActive is bool)) &&
+      (!('sipAmount' in data) || (data.sipAmount == null || (data.sipAmount is number && data.sipAmount >= 0))) &&
+      (!('sipFrequency' in data) || (data.sipFrequency == null || data.sipFrequency in ['weekly', 'monthly', 'quarterly'])) &&
+      (!('sipDay' in data) || (data.sipDay == null || (data.sipDay is number && data.sipDay >= 1 && data.sipDay <= 28))) &&
+
+      // Insurance Rules
+      (!('policyType' in data) || (data.policyType == null || data.policyType in ['term', 'health', 'life', 'motor', 'other'])) &&
+      (!('sumAssured' in data) || (data.sumAssured == null || (data.sumAssured is number && data.sumAssured >= 0))) &&
+      (!('premiumAmount' in data) || (data.premiumAmount == null || (data.premiumAmount is number && data.premiumAmount >= 0))) &&
+      (!('premiumFrequency' in data) || (data.premiumFrequency == null || data.premiumFrequency in ['monthly', 'quarterly', 'half-yearly', 'yearly'])) &&
+      (!('premiumDueDate' in data) || (data.premiumDueDate == null || (data.premiumDueDate is string && data.premiumDueDate.matches("^\\\\d{4}-\\\\d{2}-\\\\d{2}$")))) &&
+      (!('policyNumber' in data) || (data.policyNumber == null || data.policyNumber is string)) &&
+
       data.createdAt is timestamp &&
       data.updatedAt is timestamp;
     }
