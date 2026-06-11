@@ -1,23 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase';
-import { 
-  collection, 
-  query, 
-  onSnapshot, 
-  doc, 
-  setDoc, 
-  addDoc, 
-  updateDoc, 
+import { convertCurrency, formatCurrency } from '../utils/exchangeRates';
+import {
+  collection,
+  query,
+  onSnapshot,
+  doc,
+  setDoc,
+  addDoc,
+  updateDoc,
   deleteDoc,
   orderBy
 } from 'firebase/firestore';
-import { 
-  Calendar, Plus, Trash2, Edit3, AlertTriangle, 
-  CheckCircle, Info, Sparkles, UserCheck, Plane, 
-  Clock, Landmark, HelpCircle, X, RefreshCw
+import {
+  Calendar, Plus, Trash2, Edit3, AlertTriangle,
+  CheckCircle, Info, Sparkles, UserCheck, Plane,
+  Clock, Landmark, HelpCircle, X, RefreshCw, ShieldCheck
 } from 'lucide-react';
-import { PieChart, Pie, Cell, Tooltip } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import type { Trip, TaxConfig, Investment, ExchangeRates } from '../types';
 
 // Format YYYY-MM-DD to DD/MM/YYYY
@@ -64,14 +65,14 @@ export const TaxResidency: React.FC<TaxResidencyProps> = ({
   canWrite
 }) => {
   const { user } = useAuth();
-  
+
   // Tax Years (Indian FYs)
   const taxYears = [
-    '2021-22', '2022-23', '2023-24', '2024-25', 
+    '2021-22', '2022-23', '2023-24', '2024-25',
     '2025-26', '2026-27', '2027-28', '2028-29', '2029-30'
   ];
   const [selectedFY, setSelectedFY] = useState('2025-26');
-  
+
   // States
   const [trips, setTrips] = useState<Trip[]>([]);
   const [config, setConfig] = useState<TaxConfig>({
@@ -81,7 +82,7 @@ export const TaxResidency: React.FC<TaxResidencyProps> = ({
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  
+
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTrip, setEditingTrip] = useState<Trip | null>(null);
@@ -91,7 +92,7 @@ export const TaxResidency: React.FC<TaxResidencyProps> = ({
     purpose: 'Vacation',
     notes: ''
   });
-  
+
   // AI Advisor states
   const [aiLoading, setAiLoading] = useState(false);
   const [aiReport, setAiReport] = useState<string | null>(null);
@@ -153,7 +154,7 @@ export const TaxResidency: React.FC<TaxResidencyProps> = ({
     if (!canWrite) return;
     const newConfig = { ...config, [key]: value };
     setConfig(newConfig);
-    
+
     try {
       const configDocRef = doc(db, `portfolios/${portfolioId}/taxConfig`, 'settings');
       await setDoc(configDocRef, newConfig);
@@ -168,20 +169,20 @@ export const TaxResidency: React.FC<TaxResidencyProps> = ({
 
   // Compute days spent in India during the active financial year
   let daysInIndia = 0;
-  
+
   trips.forEach((trip) => {
     if (trip.destinationRegion !== 'India') return;
-    
+
     const tripStart = new Date(`${trip.startDate}T00:00:00`);
     const tripEnd = new Date(`${trip.endDate}T23:59:59`);
-    
+
     // Check if trip overlaps with the active financial year
     if (tripEnd < yearStart || tripStart > yearEnd) return;
-    
+
     // Clamp to year boundaries
     const overlapStart = tripStart < yearStart ? yearStart : tripStart;
     const overlapEnd = tripEnd > yearEnd ? yearEnd : tripEnd;
-    
+
     // Inclusive days count
     const diffTime = Math.abs(overlapEnd.getTime() - overlapStart.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -313,7 +314,7 @@ export const TaxResidency: React.FC<TaxResidencyProps> = ({
   const handleConsultAITax = async () => {
     setAiLoading(true);
     setShowAiModal(true);
-    
+
     // Extract asset summaries for context
     const assetSummary = investments.map(inv => {
       const val = rates && inv.currency !== displayCurrency
@@ -324,7 +325,7 @@ export const TaxResidency: React.FC<TaxResidencyProps> = ({
 
     try {
       const savedKey = localStorage.getItem('gemini_api_key') || '';
-      
+
       // Fallback: load from Firestore secrets if we have permission, or throw error
       let resolvedKey = savedKey;
       if (!resolvedKey) {
@@ -392,6 +393,63 @@ Ensure the tone is highly professional, clean, structured in Markdown. Add a war
     );
   }
 
+  // Capital Gains Tax Harvesting calculations (Indian Equities)
+  const indianEquities = investments.filter(
+    (inv: Investment) => (inv.type === 'stock' || inv.type === 'mutual_fund') && inv.region === 'India'
+  );
+
+  let accruedLtcg = 0;
+  let accruedStcg = 0;
+  const harvestingCandidates: { investment: Investment; gains: number; holdingPeriodDays: number }[] = [];
+  const missingPurchaseDates: Investment[] = [];
+
+  const todayDate = new Date();
+
+  indianEquities.forEach((inv: Investment) => {
+    if (!inv.startDate) {
+      missingPurchaseDates.push(inv);
+      return;
+    }
+
+    const purchaseDate = new Date(inv.startDate);
+    const diffTime = todayDate.getTime() - purchaseDate.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const isLtcg = diffDays > 365;
+    const gains = inv.currentValue - inv.amountInvested;
+
+    if (gains > 0) {
+      if (isLtcg) {
+        accruedLtcg += gains;
+        harvestingCandidates.push({
+          investment: inv,
+          gains,
+          holdingPeriodDays: diffDays
+        });
+      } else {
+        accruedStcg += gains;
+      }
+    }
+  });
+
+  const LTCG_TAX_FREE_LIMIT = 125000;
+  const availableHarvestingMargin = Math.max(0, LTCG_TAX_FREE_LIMIT - accruedLtcg);
+
+  // Insurance Tax planning aggregates
+  const insurancePolicies = investments.filter(inv => inv.type === 'insurance');
+  const total80CPremium = insurancePolicies
+    .filter(p => p.policyType === 'life' || p.policyType === 'term')
+    .reduce((sum, p) => sum + convertCurrency(p.premiumAmount || 0, p.currency, displayCurrency, rates || {} as any), 0);
+
+  const total80DPremium = insurancePolicies
+    .filter(p => p.policyType === 'health')
+    .reduce((sum, p) => sum + convertCurrency(p.premiumAmount || 0, p.currency, displayCurrency, rates || {} as any), 0);
+
+  const sec80CLimit = convertCurrency(150000, 'INR', displayCurrency, rates || {} as any);
+  const sec80DLimit = convertCurrency(25000, 'INR', displayCurrency, rates || {} as any);
+
+  const allowed80CDeduction = Math.min(sec80CLimit, total80CPremium);
+  const allowed80DDeduction = Math.min(sec80DLimit, total80DPremium);
+
   return (
     <div className="space-y-6">
       {/* Header Panel */}
@@ -419,7 +477,7 @@ Ensure the tone is highly professional, clean, structured in Markdown. Add a war
               ))}
             </select>
           </div>
-          
+
           <button
             onClick={() => openTripModal()}
             disabled={!canWrite}
@@ -431,9 +489,236 @@ Ensure the tone is highly professional, clean, structured in Markdown. Add a war
         </div>
       </div>
 
+      {/* Capital Gains & Tax-Harvesting Optimizer */}
+      <div className="glass-panel p-6 border-l-4 border-l-indigo-500">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+          <div>
+            <h3 className="text-lg font-bold flex items-center gap-2 text-white">
+              <Sparkles className="w-5 h-5 text-indigo-400" />
+              Capital Gains & Tax-Harvesting Optimizer (Indian Equity)
+            </h3>
+            <p className="text-xs text-secondary mt-1">
+              Maximize your annual tax-free gains. Under Section 112A, long-term capital gains (LTCG) on Indian equity up to **₹1.25 Lakhs per FY** are completely tax-exempt.
+            </p>
+          </div>
+          <div className="text-right">
+            <span className="text-[10px] text-secondary font-semibold uppercase block">Tax-Free LTCG Limit</span>
+            <span className="text-base font-bold text-white font-mono">₹1,25,000 / Year</span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5">
+            <span className="text-[10px] text-secondary uppercase font-bold block mb-1">Accrued LTCG (Indian Equity)</span>
+            <span className="text-lg font-bold font-mono text-amber-400">
+              ₹{accruedLtcg.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+            </span>
+            <span className="text-[10px] text-secondary block mt-0.5">Holding period &gt; 365 days</span>
+          </div>
+
+          <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5">
+            <span className="text-[10px] text-secondary uppercase font-bold block mb-1">Remaining Tax-Free Margin</span>
+            <span className="text-lg font-bold font-mono text-green-400">
+              ₹{availableHarvestingMargin.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+            </span>
+            <span className="text-[10px] text-secondary block mt-0.5">Available for tax-free tax harvesting</span>
+          </div>
+
+          <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5">
+            <span className="text-[10px] text-secondary uppercase font-bold block mb-1">Accrued STCG (Indian Equity)</span>
+            <span className="text-lg font-bold font-mono text-rose-400">
+              ₹{accruedStcg.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+            </span>
+            <span className="text-[10px] text-secondary block mt-0.5">Holding period &lt;= 365 days (Taxed at 20%)</span>
+          </div>
+        </div>
+
+        {/* Advice / Suggestions */}
+        <div className="space-y-4">
+          <div className="bg-indigo-950/20 border border-indigo-500/20 p-4 rounded-xl">
+            <h4 className="text-xs font-bold text-indigo-300 flex items-center gap-1.5 mb-2">
+              <Sparkles className="w-4 h-4 text-indigo-400" />
+              Aura Tax Harvesting Strategy Suggestions
+            </h4>
+            {availableHarvestingMargin > 0 ? (
+              <p className="text-xs text-secondary leading-relaxed">
+                You have **₹{availableHarvestingMargin.toLocaleString('en-IN', { maximumFractionDigits: 0 })}** of tax-free LTCG margin remaining. 
+                {harvestingCandidates.length > 0 ? (
+                  <span>
+                    {" "}Consider selling units of the qualified LTCG holdings below and immediately repurchasing them. 
+                    This books the gains tax-free today, resets your average purchase price higher, and reduces your future tax liability when you eventually withdraw.
+                  </span>
+                ) : (
+                  <span>
+                    {" "}Add purchase dates or log investments to see which assets qualify for tax-free booking.
+                  </span>
+                )}
+              </p>
+            ) : (
+              <p className="text-xs text-secondary leading-relaxed">
+                You have fully utilized your ₹1.25 Lakhs tax-free LTCG limit for this FY. Any further Indian equity LTCG redemptions will be subject to a 12.5% tax rate. Avoid selling further long-term assets until next financial year.
+              </p>
+            )}
+          </div>
+
+          {/* Qualified holdings for harvesting */}
+          {harvestingCandidates.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b border-light text-[10px] text-secondary font-bold uppercase tracking-wider">
+                    <th className="py-2 px-1">Qualified LTCG Asset</th>
+                    <th className="py-2 px-1">Purchase Date</th>
+                    <th className="py-2 px-1">Holding Period</th>
+                    <th className="py-2 px-1">Accrued LTCG</th>
+                    <th className="py-2 px-1 text-right">Harvesting Feasibility</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-light text-xs">
+                  {harvestingCandidates.map((candidate) => {
+                    const { investment, gains, holdingPeriodDays } = candidate;
+                    const pctOfMargin = (gains / availableHarvestingMargin) * 100;
+                    const isFeasible = gains <= availableHarvestingMargin;
+                    
+                    return (
+                      <tr key={investment.id} className="hover:bg-white/2 transition-colors">
+                        <td className="py-2 px-1 font-semibold text-white">{investment.name}</td>
+                        <td className="py-2 px-1 font-mono text-secondary">{formatDateDMY(investment.startDate || '')}</td>
+                        <td className="py-2 px-1 text-secondary">{Math.floor(holdingPeriodDays / 30)} months ({holdingPeriodDays} days)</td>
+                        <td className="py-2 px-1 font-mono text-green-400">₹{gains.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
+                        <td className="py-2 px-1 text-right">
+                          {isFeasible ? (
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-green-500/10 text-green-400 border border-green-500/10">
+                              Fully Harvestable (uses {pctOfMargin.toFixed(0)}% of margin)
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/10">
+                              Exceeds remaining margin by ₹{(gains - availableHarvestingMargin).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Missing purchase dates list */}
+          {missingPurchaseDates.length > 0 && (
+            <div className="p-4 bg-yellow-500/5 border border-yellow-500/10 rounded-xl space-y-2">
+              <h4 className="text-xs font-bold text-yellow-500 flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4" />
+                Indian Equity Assets Missing Purchase Dates
+              </h4>
+              <p className="text-[11px] text-secondary leading-relaxed">
+                The holding periods for these Indian equity holdings cannot be calculated. To evaluate STCG vs. LTCG, edit these assets in the **Investments** tab to add their purchase date:
+              </p>
+              <div className="flex flex-wrap gap-2 pt-1">
+                {missingPurchaseDates.map((inv: Investment) => (
+                  <span key={inv.id} className="bg-white/5 border border-white/5 text-secondary text-xs px-2.5 py-1 rounded-lg font-mono">
+                    ⚠️ {inv.name} ({inv.institution})
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Tax Deductions Planner (Section 80C & 80D) */}
+      <div className="glass-panel p-6 border-l-4 border-l-emerald-500 space-y-4">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <h3 className="text-lg font-bold flex items-center gap-2 text-white">
+              <ShieldCheck className="w-5 h-5 text-emerald-400" />
+              Tax Deductions Planner (Section 80C & 80D)
+            </h3>
+            <p className="text-xs text-secondary mt-1">
+              Optimize your tax deductions on insurance premiums in India. Section 80C covers Life/Term policies, while Section 80D covers Medical/Health insurance premiums.
+            </p>
+          </div>
+          <div className="text-right font-mono">
+            <span className="text-[10px] text-secondary font-semibold uppercase block">Active Deductions Target</span>
+            <span className="text-base font-bold text-white">
+              Max: {formatCurrency(convertCurrency(175000, 'INR', displayCurrency, rates || {} as any), displayCurrency)} / Year
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Section 80C Card */}
+          <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-3">
+            <div className="flex justify-between items-start">
+              <div>
+                <span className="text-xs font-bold text-white block">Section 80C (Term/Life Insurance)</span>
+                <span className="text-[10px] text-secondary">Exempts premiums paid up to {formatCurrency(sec80CLimit, displayCurrency)}</span>
+              </div>
+              <span className="text-xs font-mono font-bold text-emerald-400">
+                {formatCurrency(allowed80CDeduction, displayCurrency)} Claimed
+              </span>
+            </div>
+            
+            <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-emerald-400 rounded-full" 
+                style={{ width: `${Math.min(100, (total80CPremium / (sec80CLimit || 1)) * 100)}%` }}
+              ></div>
+            </div>
+
+            <div className="flex justify-between text-[10px] text-secondary font-mono">
+              <span>Total Premiums: {formatCurrency(total80CPremium, displayCurrency)}</span>
+              <span>Limit: {formatCurrency(sec80CLimit, displayCurrency)}</span>
+            </div>
+          </div>
+
+          {/* Section 80D Card */}
+          <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-3">
+            <div className="flex justify-between items-start">
+              <div>
+                <span className="text-xs font-bold text-white block">Section 80D (Health/Medical Insurance)</span>
+                <span className="text-[10px] text-secondary">Exempts health premiums up to {formatCurrency(sec80DLimit, displayCurrency)}</span>
+              </div>
+              <span className="text-xs font-mono font-bold text-emerald-400">
+                {formatCurrency(allowed80DDeduction, displayCurrency)} Claimed
+              </span>
+            </div>
+
+            <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-emerald-400 rounded-full" 
+                style={{ width: `${Math.min(100, (total80DPremium / (sec80DLimit || 1)) * 100)}%` }}
+              ></div>
+            </div>
+
+            <div className="flex justify-between text-[10px] text-secondary font-mono">
+              <span>Total Premiums: {formatCurrency(total80DPremium, displayCurrency)}</span>
+              <span>Limit: {formatCurrency(sec80DLimit, displayCurrency)}</span>
+            </div>
+          </div>
+        </div>
+
+        {insurancePolicies.length > 0 && (
+          <div className="p-3 bg-emerald-950/20 border border-emerald-500/20 rounded-xl text-xs text-secondary leading-relaxed">
+            <strong>Deductions Summary:</strong> You are currently saving <strong>{formatCurrency(allowed80CDeduction + allowed80DDeduction, displayCurrency)}</strong> in taxable income from your active insurance policies. 
+            {total80CPremium > sec80CLimit && (
+              <span className="text-amber-400 block mt-1">
+                ⚠️ Your Section 80C premiums exceed the tax-free limit. Any excess premium above {formatCurrency(sec80CLimit, displayCurrency)} will not yield further tax savings.
+              </span>
+            )}
+            {total80DPremium > sec80DLimit && (
+              <span className="text-amber-400 block mt-1">
+                ⚠️ Your Section 80D premiums exceed the standard limit. (Note: limit increases to ₹50,000 in India if premiums are paid for senior citizen parents).
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Main Grid: Metrics & Config */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
+
         {/* Column 1: Physical Presence Indicators */}
         <div className="glass-panel p-6 flex flex-col justify-between min-h-[300px]">
           <div>
@@ -447,34 +732,36 @@ Ensure the tone is highly professional, clean, structured in Markdown. Add a war
           </div>
 
           <div style={{ height: '180px', width: '100%', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '8px 0' }}>
-            <PieChart width={220} height={180}>
-              <Pie
-                data={[
-                  { name: 'In India', value: daysInIndia },
-                  { name: 'Outside India', value: daysOutsideIndia }
-                ]}
-                cx="50%"
-                cy="50%"
-                innerRadius={55}
-                outerRadius={75}
-                paddingAngle={3}
-                dataKey="value"
-              >
-                <Cell fill="#f59e0b" />
-                <Cell fill="#6366f1" />
-              </Pie>
-              <Tooltip
-                contentStyle={{
-                  background: 'rgba(20, 20, 25, 0.95)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: '12px',
-                  fontSize: '11px',
-                  color: '#fff'
-                }}
-                formatter={(value: any) => [`${value} Days`, '']}
-              />
-            </PieChart>
-            
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={[
+                    { name: 'In India', value: daysInIndia },
+                    { name: 'Outside India', value: daysOutsideIndia }
+                  ]}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={55}
+                  outerRadius={75}
+                  paddingAngle={3}
+                  dataKey="value"
+                >
+                  <Cell key="cell-in-india" fill="#f59e0b" />
+                  <Cell key="cell-outside-india" fill="#6366f1" />
+                </Pie>
+                <Tooltip
+                  contentStyle={{
+                    background: 'rgba(20, 20, 25, 0.95)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    borderRadius: '12px',
+                    fontSize: '11px',
+                    color: '#fff'
+                  }}
+                  formatter={(value: any) => [`${value} Days`, '']}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+
             {/* Center Text displaying days in India */}
             <div style={{ position: 'absolute', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#fff' }}>{daysInIndia}</span>
@@ -583,10 +870,10 @@ Ensure the tone is highly professional, clean, structured in Markdown. Add a war
             )}
 
             <h4 className="text-lg font-bold text-white mt-1">
-              {residencyStatus === 'NRI' 
-                ? 'Non-Resident (NR)' 
-                : residencyStatus === 'RNOR' 
-                  ? 'Resident (RNOR)' 
+              {residencyStatus === 'NRI'
+                ? 'Non-Resident (NR)'
+                : residencyStatus === 'RNOR'
+                  ? 'Resident (RNOR)'
                   : 'Ordinary Resident (ROR)'}
             </h4>
 
@@ -608,13 +895,13 @@ Ensure the tone is highly professional, clean, structured in Markdown. Add a war
 
       {/* Travel logs & Guidance */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
+
         {/* Left: Travel Logs */}
         <div className="glass-panel p-6 flex flex-col justify-between">
           <div>
             <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4 flex items-center gap-2">
               <Plane className="w-4 h-4 text-teal-400" />
-              All Logged Trips to India
+              Logged Trips to India (All Time)
             </h3>
             <p className="text-xs text-secondary mb-4">
               Chronological list of all logged travel logs to India.
@@ -635,8 +922,8 @@ Ensure the tone is highly professional, clean, structured in Markdown. Add a war
               <table className="w-full border-collapse text-left">
                 <thead>
                   <tr className="border-b border-light text-[10px] text-secondary font-bold uppercase tracking-wider">
-                    <th className="py-2.5 px-2">Departure Date</th>
-                    <th className="py-2.5 px-2">Arrival Date</th>
+                    <th className="py-2.5 px-2">Departure Date (Leaving Home)</th>
+                    <th className="py-2.5 px-2">Arrival Date (Returning Home)</th>
                     <th className="py-2.5 px-2">No. of Days</th>
                     <th className="py-2.5 px-2">Purpose</th>
                     <th className="py-2.5 px-2 text-right">Actions</th>
@@ -806,7 +1093,7 @@ Ensure the tone is highly professional, clean, structured in Markdown. Add a war
 
             <form onSubmit={handleTripSubmit} className="space-y-4 text-xs">
               <div>
-                <label className="block text-secondary font-semibold mb-1">Arrival Date (in India):</label>
+                <label className="block text-secondary font-semibold mb-1">Departure Date (Leaving Home):</label>
                 <input
                   type="date"
                   required
@@ -817,7 +1104,7 @@ Ensure the tone is highly professional, clean, structured in Markdown. Add a war
               </div>
 
               <div>
-                <label className="block text-secondary font-semibold mb-1">Departure Date (from India):</label>
+                <label className="block text-secondary font-semibold mb-1">Arrival Date (Returning Home):</label>
                 <input
                   type="date"
                   required
@@ -887,7 +1174,7 @@ Ensure the tone is highly professional, clean, structured in Markdown. Add a war
               <Sparkles className="w-5 h-5 text-teal-400 animate-pulse" />
               Aura Tax Advisor Insights
             </h3>
-            
+
             <p className="text-[10px] text-secondary mb-4">
               AI-generated residency compliance analysis for global investment portfolios.
             </p>

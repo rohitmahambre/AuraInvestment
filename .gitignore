@@ -35,6 +35,8 @@ dist-ssr
 
 # Local testing and scratchpad
 scratch/
+!scratch/seed_demo_portfolio.js
+!scratch/capture_monthly_snapshot.js
 accounts.json
 ALlInvest.pdf
 READ.md

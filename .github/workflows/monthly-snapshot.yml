@@ -1,0 +1,40 @@
+name: Automated Monthly Net Worth Snapshot
+
+on:
+  schedule:
+    # Run at 2:00 AM UTC on the 1st of every month
+    - cron: '0 2 1 * *'
+  workflow_dispatch:
+    # Allow manual execution from GitHub UI
+    inputs:
+      custom_month:
+        description: 'Override Month (format YYYY-MM)'
+        required: false
+        default: ''
+
+jobs:
+  capture-snapshot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Snapshot Capture Script
+        env:
+          FIREBASE_SERVICE_ACCOUNT_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+        run: |
+          if [ -n "${{ github.event.inputs.custom_month }}" ]; then
+            node scratch/capture_monthly_snapshot.js --month "${{ github.event.inputs.custom_month }}"
+          else
+            node scratch/capture_monthly_snapshot.js
+          fi
