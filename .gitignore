@@ -34,9 +34,10 @@ dist-ssr
 .firebase/
 
 # Local testing and scratchpad
-scratch/
+scratch/*
 !scratch/seed_demo_portfolio.js
 !scratch/capture_monthly_snapshot.js
+!scratch/sync_all_assets_backend.js
 accounts.json
 ALlInvest.pdf
 READ.md
