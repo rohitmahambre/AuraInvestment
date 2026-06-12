@@ -1,11 +1,23 @@
-import { initializeApp } from 'firebase-admin/app';
+import { initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import fetch from 'node-fetch';
 
-initializeApp({
+let appOptions = {
   projectId: "melavo-514b7"
-});
+};
 
+const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+if (serviceAccountJson) {
+  try {
+    const serviceAccount = JSON.parse(serviceAccountJson);
+    appOptions.credential = cert(serviceAccount);
+    console.log("Using Firebase credentials from environment secret.");
+  } catch (err) {
+    console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY JSON:", err);
+  }
+}
+
+initializeApp(appOptions);
 const db = getFirestore();
 
 // Parse CLI arguments
