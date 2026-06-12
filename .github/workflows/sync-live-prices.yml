@@ -1,0 +1,40 @@
+name: Sync Live Prices
+
+on:
+  schedule:
+    # Run daily at 12:00 PM UTC (5:30 PM IST, after Indian market close)
+    - cron: '0 12 * * *'
+  workflow_dispatch:
+    # Allow manual trigger from GitHub UI at any time
+    inputs:
+      portfolio_id:
+        description: 'Specific Portfolio ID to sync (leave empty for all portfolios)'
+        required: false
+        default: ''
+
+jobs:
+  sync-prices:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Sync Script
+        env:
+          FIREBASE_SERVICE_ACCOUNT_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+        run: |
+          if [ -n "${{ github.event.inputs.portfolio_id }}" ]; then
+            node scratch/sync_all_assets_backend.js --portfolio "${{ github.event.inputs.portfolio_id }}"
+          else
+            node scratch/sync_all_assets_backend.js
+          fi

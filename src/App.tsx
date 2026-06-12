@@ -202,8 +202,21 @@ function DashboardShell() {
 
   const handleSyncLivePrices = async () => {
     if (!activePortfolio || investments.length === 0) return;
+
+    // Check if running in production
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (!isLocal) {
+      setSyncingPrices(true);
+      setSyncMessage('Live prices are synced automatically in the background via GitHub Actions.');
+      setTimeout(() => {
+        setSyncingPrices(false);
+        setSyncMessage('');
+      }, 5000);
+      return;
+    }
+
     setSyncingPrices(true);
-    setSyncMessage('Connecting to live feeds...');
+    setSyncMessage('Connecting to live feeds (localhost)...');
     let successCount = 0;
     let failCount = 0;
 
@@ -216,7 +229,7 @@ function DashboardShell() {
             const res = await fetch(`https://corsproxy.io/?https://query1.finance.yahoo.com/v8/finance/chart/${tickerClean}`);
             if (!res.ok) throw new Error("Yahoo Finance request failed");
             const data = await res.json();
-            const price = data.chart.result[0].meta.regularMarketPrice;
+            const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice;
             if (typeof price === 'number' && price > 0) {
               const newCurrentVal = inv.units * price;
               const invRef = doc(db, `portfolios/${activePortfolio.id}/investments`, inv.id);
